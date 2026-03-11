@@ -2,6 +2,7 @@
 
 #include "collect/platform_schema.h"
 #include "extensions/plugin_loader.h"
+#include "extensions/filter_loader.h"
 #include "interface/banner.h"
 #include "interface/cli_parser.h"
 #include "interface/prompt.h"
@@ -63,6 +64,30 @@ std::filesystem::path resolve_plugin_dir() {
     return std::filesystem::path("plugins");
 }
 
+std::filesystem::path resolve_filter_dir() {
+    if (const char* env = std::getenv("SILICORE_FILTER_DIR")) {
+        return std::filesystem::path(env);
+    }
+    auto has_shared = [](const std::filesystem::path& dir) {
+        if (!std::filesystem::is_directory(dir)) {
+            return false;
+        }
+        for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".so") {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (has_shared("filters")) {
+        return std::filesystem::path("filters");
+    }
+    if (has_shared("build/filters")) {
+        return std::filesystem::path("build/filters");
+    }
+    return std::filesystem::path("filters");
+}
 std::filesystem::path resolve_output_root(const interface::CliArgs& args) {
     if (!args.output_dir.empty()) {
         return std::filesystem::path(args.output_dir);
@@ -89,12 +114,13 @@ void print_help() {
     using namespace interface;
     std::cout << c(std::string(symbol("major")) + " " + foundation::PROJECT_NAME + " v" + foundation::VERSION, Colors::SKY_DARK) << "\n";
     std::cout << c(std::string(symbol("action")) + " Commands:", Colors::CYAN) << "\n";
-    std::cout << c("  profile <username> [--preset fast|balanced|deep|max] [--timeout ms] [--concurrency n] [--proxy url] [--tor] [--txt] [--html] [--json] [--out dir] [--plugins a,b] [--all-plugins]", Colors::GREY) << "\n";
-    std::cout << c("  surface <domain> [--preset fast|balanced|deep|max] [--timeout ms] [--proxy url] [--tor] [--txt] [--html] [--json] [--out dir] [--plugins a,b] [--all-plugins]", Colors::GREY) << "\n";
-    std::cout << c("  fusion <username> <domain> [--preset fast|balanced|deep|max] [--timeout ms] [--concurrency n] [--proxy url] [--tor] [--txt] [--html] [--json] [--out dir] [--plugins a,b] [--all-plugins]", Colors::GREY) << "\n";
+    std::cout << c("  profile <username> [--preset fast|balanced|deep|max] [--timeout ms] [--concurrency n] [--proxy url] [--tor] [--txt] [--html] [--json] [--out dir] [--plugins a,b] [--all-plugins] [--filters a,b] [--all-filters]", Colors::GREY) << "\n";
+    std::cout << c("  surface <domain> [--preset fast|balanced|deep|max] [--timeout ms] [--proxy url] [--tor] [--txt] [--html] [--json] [--out dir] [--plugins a,b] [--all-plugins] [--filters a,b] [--all-filters]", Colors::GREY) << "\n";
+    std::cout << c("  fusion <username> <domain> [--preset fast|balanced|deep|max] [--timeout ms] [--concurrency n] [--proxy url] [--tor] [--txt] [--html] [--json] [--out dir] [--plugins a,b] [--all-plugins] [--filters a,b] [--all-filters]", Colors::GREY) << "\n";
     std::cout << c("  about | --about", Colors::GREY) << "\n";
     std::cout << c("  explain | --explain", Colors::GREY) << "\n";
     std::cout << c("  show plugins", Colors::GREY) << "\n";
+    std::cout << c("  show filters", Colors::GREY) << "\n";
     std::cout << c("  show platforms", Colors::GREY) << "\n";
     std::cout << c("  help", Colors::GREY) << "\n";
     std::cout << c(std::string(symbol("feature")) + " Outputs:", Colors::CYAN) << "\n";
@@ -141,6 +167,35 @@ std::vector<extensions::PluginResult> run_plugins(
     return results;
 }
 
+std::vector<extensions::FilterResult> run_filters(
+    const interface::CliArgs& args,
+    const std::string& scope,
+    const reporting::json& context_json
+) {
+    if (!args.all_filters && args.filters.empty()) {
+        return {};
+    }
+
+    extensions::FilterManager manager;
+    manager.load_all(resolve_filter_dir());
+    auto context_str = context_json.dump();
+    auto results = manager.run_scope(scope, context_str);
+
+    if (!args.filters.empty()) {
+        std::vector<extensions::FilterResult> filtered;
+        for (const auto& result : results) {
+            for (const auto& id : args.filters) {
+                if (utils::to_lower(result.id) == utils::to_lower(id)) {
+                    filtered.push_back(result);
+                    break;
+                }
+            }
+        }
+        return filtered;
+    }
+
+    return results;
+}
 int handle_command(const interface::CliArgs& args) {
     std::string command = utils::to_lower(args.command);
     if (command.empty() || command == "help") {
@@ -168,6 +223,15 @@ int handle_command(const interface::CliArgs& args) {
             std::cout << "Plugins loaded: " << manager.plugins().size() << "\n";
             for (const auto& plugin : manager.plugins()) {
                 std::cout << "- " << plugin->spec().id << " (" << plugin->spec().version << ")\n";
+            }
+            return 0;
+        }
+        if (target == "filters") {
+            extensions::FilterManager manager;
+            manager.load_all(resolve_filter_dir());
+            std::cout << "Filters loaded: " << manager.filters().size() << "\n";
+            for (const auto& filter : manager.filters()) {
+                std::cout << "- " << filter->spec().id << " (" << filter->spec().version << ")\n";
             }
             return 0;
         }
@@ -222,17 +286,18 @@ int handle_command(const interface::CliArgs& args) {
         auto profile = profile_future.get();
         auto surface = surface_future.get();
 
-        auto profile_payload = reporting::build_report_payload(username, profile.scan_result.profiles, nullptr, {}, nullptr, "profile");
-        auto surface_payload = reporting::build_report_payload(domain, {}, &surface.scan_result, {}, nullptr, "surface");
+        auto profile_payload = reporting::build_report_payload(username, profile.scan_result.profiles, nullptr, {}, nullptr, {}, "profile");
+        auto surface_payload = reporting::build_report_payload(domain, {}, &surface.scan_result, {}, nullptr, {}, "surface");
 
         engines::FusionEngine fusion_engine;
         auto fused = fusion_engine.fuse_profile_domain(profile_payload, surface_payload);
         fused["graph"] = fusion_engine.generate_graph(fused);
 
         std::string combined_target = username + "@" + domain;
-        auto context_json = reporting::build_report_payload(combined_target, profile.scan_result.profiles, &surface.scan_result, {}, &fused, "fusion");
+        auto context_json = reporting::build_report_payload(combined_target, profile.scan_result.profiles, &surface.scan_result, {}, &fused, {}, "fusion");
         auto plugins = run_plugins(args, "fusion", context_json);
-        auto payload = reporting::build_report_payload(combined_target, profile.scan_result.profiles, &surface.scan_result, plugins, &fused, "fusion");
+        auto filters = run_filters(args, "fusion", context_json);
+        auto payload = reporting::build_report_payload(combined_target, profile.scan_result.profiles, &surface.scan_result, plugins, &fused, filters, "fusion");
 
         std::string key = reporting::sanitize_target(combined_target);
         auto paths = resolve_output_paths(args, key);
@@ -254,9 +319,10 @@ int handle_command(const interface::CliArgs& args) {
     if (command == "profile") {
         const auto& username = args.targets[0];
         auto profile = orchestrator.run_profile(username, policy, timeout, concurrency, proxy_url);
-        auto context_json = reporting::build_report_payload(username, profile.scan_result.profiles, nullptr, {}, nullptr, "profile");
+        auto context_json = reporting::build_report_payload(username, profile.scan_result.profiles, nullptr, {}, nullptr, {}, "profile");
         auto plugins = run_plugins(args, "profile", context_json);
-        auto payload = reporting::build_report_payload(username, profile.scan_result.profiles, nullptr, plugins, nullptr, "profile");
+        auto filters = run_filters(args, "profile", context_json);
+        auto payload = reporting::build_report_payload(username, profile.scan_result.profiles, nullptr, plugins, nullptr, filters, "profile");
 
         std::string key = reporting::sanitize_target(username);
         auto paths = resolve_output_paths(args, key);
@@ -278,9 +344,10 @@ int handle_command(const interface::CliArgs& args) {
     if (command == "surface") {
         const auto& domain = args.targets[0];
         auto surface = orchestrator.run_surface(domain, policy, timeout, proxy_url);
-        auto context_json = reporting::build_report_payload(domain, {}, &surface.scan_result, {}, nullptr, "surface");
+        auto context_json = reporting::build_report_payload(domain, {}, &surface.scan_result, {}, nullptr, {}, "surface");
         auto plugins = run_plugins(args, "surface", context_json);
-        auto payload = reporting::build_report_payload(domain, {}, &surface.scan_result, plugins, nullptr, "surface");
+        auto filters = run_filters(args, "surface", context_json);
+        auto payload = reporting::build_report_payload(domain, {}, &surface.scan_result, plugins, nullptr, filters, "surface");
 
         std::string key = reporting::sanitize_target(domain);
         auto paths = resolve_output_paths(args, key);

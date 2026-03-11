@@ -11,6 +11,8 @@ struct CliArgs {
     std::string preset = "balanced";
     std::vector<std::string> plugins;
     bool all_plugins = false;
+    std::vector<std::string> filters;
+    bool all_filters = false;
     bool html_output = false;
     bool json_output = false;
     bool text_output = false;

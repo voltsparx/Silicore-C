@@ -64,6 +64,16 @@ CliArgs parse_tokens(const std::vector<std::string>& tokens) {
             }
         } else if (token == "--all-plugins") {
             args.all_plugins = true;
+        } else if (token == "--filters" && i + 1 < tokens.size()) {
+            auto list = utils::split(tokens[++i], ',');
+            for (auto& item : list) {
+                auto trimmed = utils::trim(item);
+                if (!trimmed.empty()) {
+                    args.filters.push_back(trimmed);
+                }
+            }
+        } else if (token == "--all-filters") {
+            args.all_filters = true;
         } else if (!token.empty() && token[0] != '-') {
             args.targets.push_back(token);
         }

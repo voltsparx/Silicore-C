@@ -83,7 +83,8 @@ int run_prompt(const CommandHandler& handler) {
             std::cout << c("  surface <domain>", Colors::GREY) << "\n";
             std::cout << c("  fusion <username> <domain>", Colors::GREY) << "\n";
             std::cout << c("  about | explain", Colors::GREY) << "\n";
-            std::cout << c("  show plugins | show platforms", Colors::GREY) << "\n";
+            std::cout << c("  show plugins | show filters | show platforms", Colors::GREY) << "\n";
+            std::cout << c("  use --filters/--all-filters for filter modules", Colors::GREY) << "\n";
             std::cout << c("  banner | help | exit", Colors::GREY) << "\n";
             std::cout << c(std::string(symbol("feature")) + " Outputs:", Colors::CYAN) << "\n";
             std::cout << c("  Prompt will ask for formats and output directory (default: ./output)", Colors::GREY) << "\n";

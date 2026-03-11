@@ -34,6 +34,26 @@ json build_plugin_json(const std::vector<extensions::PluginResult>& plugins) {
     return out;
 }
 
+json build_filter_json(const std::vector<extensions::FilterResult>& filters) {
+    json out = json::array();
+    for (const auto& filter : filters) {
+        json entry;
+        entry["id"] = filter.id;
+        entry["title"] = filter.title;
+        entry["version"] = filter.version;
+        entry["severity"] = filter.severity;
+        if (!filter.output_json.empty()) {
+            try {
+                entry["output"] = json::parse(filter.output_json);
+            } catch (const std::exception&) {
+                entry["output_raw"] = filter.output_json;
+            }
+        }
+        out.push_back(entry);
+    }
+    return out;
+}
+
 const char* status_color(const std::string& status) {
     using namespace silicore::interface;
     if (status == "FOUND") return Colors::GREEN;
@@ -98,6 +118,7 @@ json build_report_payload(
     const collect::DomainScanResult* domain_result,
     const std::vector<extensions::PluginResult>& plugins,
     const json* fusion_result,
+    const std::vector<extensions::FilterResult>& filters,
     const std::string& mode
 ) {
     json payload;
@@ -119,6 +140,7 @@ json build_report_payload(
         payload["domain_result"] = nullptr;
     }
     payload["plugins"] = build_plugin_json(plugins);
+    payload["filters"] = build_filter_json(filters);
     if (fusion_result) {
         payload["fusion_result"] = *fusion_result;
     } else {
@@ -240,6 +262,23 @@ std::string render_cli_report(const json& payload) {
                 out << c("  output: ", Colors::GREY) << plugin["output"].dump() << "\n";
             } else if (plugin.contains("output_raw")) {
                 out << c("  output: ", Colors::GREY) << plugin.value("output_raw", "") << "\n";
+            }
+        }
+    }
+
+    if (payload.contains("filters") && payload["filters"].is_array() && !payload["filters"].empty()) {
+        out << "\n" << c(std::string(symbol("major")) + " Filters", Colors::SKY_DARK) << "\n";
+        for (const auto& filter : payload["filters"]) {
+            std::string title = filter.value("title", filter.value("id", "-"));
+            out << c(std::string(symbol("bullet")) + " " + title, Colors::CYAN);
+            if (filter.contains("version")) {
+                out << c(" v" + filter.value("version", ""), Colors::GREY);
+            }
+            out << c(" (severity " + std::to_string(filter.value("severity", 0)) + ")", Colors::GREY) << "\n";
+            if (filter.contains("output")) {
+                out << c("  output: ", Colors::GREY) << filter["output"].dump() << "\n";
+            } else if (filter.contains("output_raw")) {
+                out << c("  output: ", Colors::GREY) << filter.value("output_raw", "") << "\n";
             }
         }
     }
@@ -396,6 +435,25 @@ std::string render_html_report(const json& payload) {
                 out << "<pre>" << html_escape(plugin["output"].dump(2)) << "</pre>";
             } else if (plugin.contains("output_raw")) {
                 out << "<pre>" << html_escape(plugin.value("output_raw", "")) << "</pre>";
+            }
+            out << "</div>";
+        }
+        out << "</div>";
+    }
+
+    if (payload.contains("filters") && payload["filters"].is_array() && !payload["filters"].empty()) {
+        out << "<div class='section'><h2>Filters</h2>";
+        for (const auto& filter : payload["filters"]) {
+            out << "<div class='card'>";
+            out << "<div><strong>" << html_escape(filter.value("title", filter.value("id", "-"))) << "</strong>";
+            if (filter.contains("version")) {
+                out << " <span class='badge'>v" << html_escape(filter.value("version", "")) << "</span>";
+            }
+            out << " <span class='badge'>severity " << filter.value("severity", 0) << "</span></div>";
+            if (filter.contains("output")) {
+                out << "<pre>" << html_escape(filter["output"].dump(2)) << "</pre>";
+            } else if (filter.contains("output_raw")) {
+                out << "<pre>" << html_escape(filter.value("output_raw", "")) << "</pre>";
             }
             out << "</div>";
         }

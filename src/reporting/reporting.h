@@ -3,6 +3,7 @@
 #include "collect/domain_collector.h"
 #include "domain/entity.h"
 #include "extensions/plugin_loader.h"
+#include "extensions/filter_loader.h"
 
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -21,6 +22,7 @@ json build_report_payload(
     const collect::DomainScanResult* domain_result,
     const std::vector<extensions::PluginResult>& plugins,
     const json* fusion_result,
+    const std::vector<extensions::FilterResult>& filters,
     const std::string& mode
 );
 

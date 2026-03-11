@@ -1,2 +1,12 @@
 original-silica-x/
 self-assessment/
+build-ninja/
+builg/
+.vscode/
+.idea/
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
