@@ -1,5 +1,6 @@
 #include "engines/async_engine.h"
 
+#include "foundation/metadata.h"
 #include "utils/strings.h"
 
 #include <curl/curl.h>
@@ -29,6 +30,7 @@ struct CurlContext {
     std::string header_buffer;
     size_t max_body = 0;
     char error_buffer[CURL_ERROR_SIZE] = {0};
+    std::string user_agent;
 };
 
 size_t write_body(char* ptr, size_t size, size_t nmemb, void* userdata) {
@@ -61,7 +63,9 @@ void setup_easy(CURL* easy, const HttpRequest& req, CurlContext* ctx) {
     curl_easy_setopt(easy, CURLOPT_HEADERDATA, ctx);
     curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, ctx->error_buffer);
     curl_easy_setopt(easy, CURLOPT_PRIVATE, ctx);
-    curl_easy_setopt(easy, CURLOPT_USERAGENT, "Silicore-C/1.0");
+    ctx->user_agent = std::string(foundation::PROJECT_NAME) + "/" + foundation::VERSION +
+        " (" + foundation::VERSION_THEME + ")";
+    curl_easy_setopt(easy, CURLOPT_USERAGENT, ctx->user_agent.c_str());
 
     if (!req.proxy_url.empty()) {
         curl_easy_setopt(easy, CURLOPT_PROXY, req.proxy_url.c_str());

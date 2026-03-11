@@ -27,9 +27,11 @@ void show_banner(const std::string& anonymity_status) {
     std::cout << "_________________________________________________________________________________\n";
     std::cout << c(
         std::string("    Automated Multi-OSINT Tool - Developed by ") + foundation::AUTHOR +
-            " (github.com/" + foundation::AUTHOR + ")",
+            " (github.com/" + foundation::AUTHOR_HANDLE + ")",
         Colors::CYAN
     ) << "\n";
+    std::cout << c(std::string("                      Theme: ") + foundation::VERSION_THEME, Colors::GREY) << "\n";
+    std::cout << c(std::string("                      Contact: ") + foundation::CONTACT_EMAILS, Colors::GREY) << "\n";
     std::cout << c(std::string("                      Current Anonymity: ") + anonymity_status, Colors::CYAN) << "\n\n";
 }
 

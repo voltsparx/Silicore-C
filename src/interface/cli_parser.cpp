@@ -34,6 +34,10 @@ CliArgs parse_tokens(const std::vector<std::string>& tokens) {
         const auto& token = tokens[i];
         if (token == "--preset" && i + 1 < tokens.size()) {
             args.preset = tokens[++i];
+        } else if (token == "--about") {
+            args.command = "about";
+        } else if (token == "--explain") {
+            args.command = "explain";
         } else if (token == "--timeout" && i + 1 < tokens.size()) {
             args.timeout_ms = std::stoi(tokens[++i]);
         } else if (token == "--concurrency" && i + 1 < tokens.size()) {

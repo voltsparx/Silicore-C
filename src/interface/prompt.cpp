@@ -82,6 +82,7 @@ int run_prompt(const CommandHandler& handler) {
             std::cout << c("  profile <username>", Colors::GREY) << "\n";
             std::cout << c("  surface <domain>", Colors::GREY) << "\n";
             std::cout << c("  fusion <username> <domain>", Colors::GREY) << "\n";
+            std::cout << c("  about | explain", Colors::GREY) << "\n";
             std::cout << c("  show plugins | show platforms", Colors::GREY) << "\n";
             std::cout << c("  banner | help | exit", Colors::GREY) << "\n";
             std::cout << c(std::string(symbol("feature")) + " Outputs:", Colors::CYAN) << "\n";

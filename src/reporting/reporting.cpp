@@ -105,6 +105,10 @@ json build_report_payload(
         {"generated_at_utc", utils::utc_timestamp()},
         {"mode", mode},
         {"framework", std::string(foundation::PROJECT_NAME) + " v" + foundation::VERSION},
+        {"theme", foundation::VERSION_THEME},
+        {"author", foundation::AUTHOR},
+        {"contact", foundation::CONTACT_EMAILS},
+        {"project_url", foundation::PROJECT_URL},
     };
 
     payload["target"] = target;
@@ -153,6 +157,7 @@ std::string render_cli_report(const json& payload) {
     if (payload.contains("metadata")) {
         const auto& meta = payload["metadata"];
         out << c(std::string(symbol("feature")) + " Mode: " + meta.value("mode", "-"), Colors::CYAN) << "\n";
+        out << c(std::string(symbol("feature")) + " Theme: " + meta.value("theme", "-"), Colors::GREY) << "\n";
         out << c(std::string(symbol("feature")) + " Generated: " + meta.value("generated_at_utc", "-"), Colors::GREY) << "\n";
     }
 
@@ -285,16 +290,19 @@ std::string render_html_report(const json& payload) {
 
     std::string target = payload.value("target", "-");
     std::string mode = "-";
+    std::string theme = "-";
     std::string generated = "-";
     if (payload.contains("metadata")) {
         const auto& meta = payload["metadata"];
         mode = meta.value("mode", "-");
+        theme = meta.value("theme", "-");
         generated = meta.value("generated_at_utc", "-");
     }
     out << "<div class='header'>";
     out << "<h1>" << foundation::PROJECT_NAME << " Report</h1>";
     out << "<div class='meta'>Target: <span class='accent'>" << html_escape(target) << "</span>";
     out << " | Mode: " << html_escape(mode);
+    out << " | Theme: " << html_escape(theme);
     out << " | Generated: " << html_escape(generated) << "</div>";
     out << "</div>";
 

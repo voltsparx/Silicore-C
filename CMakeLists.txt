@@ -52,10 +52,12 @@ set(SILICORE_CORE_SOURCES
   src/collect/platform_scanner.cpp
   src/collect/domain_collector.cpp
   ${SILICORE_PLATFORM_SOURCES}
+  src/interface/about.cpp
   src/interface/cli_parser.cpp
   src/interface/line_input.cpp
   src/interface/prompt.cpp
   src/interface/banner.cpp
+  src/interface/explain.cpp
   src/reporting/reporting.cpp
   src/extensions/plugin_loader.cpp
 )

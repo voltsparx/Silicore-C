@@ -21,6 +21,11 @@
 
 namespace silicore {
 
+namespace interface {
+void show_about();
+void show_explain();
+}
+
 namespace {
 
 std::string resolve_proxy(const interface::CliArgs& args) {
@@ -87,6 +92,8 @@ void print_help() {
     std::cout << c("  profile <username> [--preset fast|balanced|deep|max] [--timeout ms] [--concurrency n] [--proxy url] [--tor] [--txt] [--html] [--json] [--out dir] [--plugins a,b] [--all-plugins]", Colors::GREY) << "\n";
     std::cout << c("  surface <domain> [--preset fast|balanced|deep|max] [--timeout ms] [--proxy url] [--tor] [--txt] [--html] [--json] [--out dir] [--plugins a,b] [--all-plugins]", Colors::GREY) << "\n";
     std::cout << c("  fusion <username> <domain> [--preset fast|balanced|deep|max] [--timeout ms] [--concurrency n] [--proxy url] [--tor] [--txt] [--html] [--json] [--out dir] [--plugins a,b] [--all-plugins]", Colors::GREY) << "\n";
+    std::cout << c("  about | --about", Colors::GREY) << "\n";
+    std::cout << c("  explain | --explain", Colors::GREY) << "\n";
     std::cout << c("  show plugins", Colors::GREY) << "\n";
     std::cout << c("  show platforms", Colors::GREY) << "\n";
     std::cout << c("  help", Colors::GREY) << "\n";
@@ -138,6 +145,14 @@ int handle_command(const interface::CliArgs& args) {
     std::string command = utils::to_lower(args.command);
     if (command.empty() || command == "help") {
         print_help();
+        return 0;
+    }
+    if (command == "about") {
+        interface::show_about();
+        return 0;
+    }
+    if (command == "explain") {
+        interface::show_explain();
         return 0;
     }
 
