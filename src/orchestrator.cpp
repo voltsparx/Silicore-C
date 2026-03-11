@@ -34,14 +34,17 @@ SurfaceRunResult Orchestrator::run_surface(
     const std::string& domain,
     const ExecutionPolicy& policy,
     int timeout_ms,
-    const std::string& proxy_url
+    const std::string& proxy_url,
+    bool include_ct,
+    bool include_rdap,
+    int max_subdomains
 ) {
     SurfaceRunResult result;
     collect::DomainScanOptions options;
     options.timeout_ms = timeout_ms;
-    options.include_ct = true;
-    options.include_rdap = true;
-    options.max_subdomains = 250;
+    options.include_ct = include_ct;
+    options.include_rdap = include_rdap;
+    options.max_subdomains = max_subdomains > 0 ? max_subdomains : 250;
     options.proxy_url = proxy_url;
     int adjusted = stabilizer_.adjust_concurrency(policy.concurrency, health_monitor_.snapshot());
     options.concurrency = std::max(4, std::min(adjusted, 64));
