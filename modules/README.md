@@ -1,0 +1,1 @@
+Module catalog placeholder for Silicore-C.\n

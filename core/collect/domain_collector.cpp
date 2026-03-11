@@ -1,12 +1,11 @@
 #include "core/collect/domain_collector.h"
 
+#include "core/engines/async_engine.h"
 #include "core/utils/strings.h"
 
-#include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
-#include <cstring>
 #include <future>
 #include <netdb.h>
 #include <set>
@@ -19,92 +18,15 @@ using json = nlohmann::json;
 
 namespace {
 
-struct CurlGlobal {
-    CurlGlobal() { curl_global_init(CURL_GLOBAL_ALL); }
-    ~CurlGlobal() { curl_global_cleanup(); }
-};
-
-CurlGlobal& curl_global() {
-    static CurlGlobal global;
-    return global;
-}
-
-size_t write_body(char* ptr, size_t size, size_t nmemb, void* userdata) {
-    auto* body = static_cast<std::string*>(userdata);
-    body->append(ptr, size * nmemb);
-    return size * nmemb;
-}
-
-size_t write_header(char* ptr, size_t size, size_t nmemb, void* userdata) {
-    auto* headers = static_cast<std::unordered_map<std::string, std::string>*>(userdata);
-    std::string line(ptr, size * nmemb);
-    auto pos = line.find(':');
-    if (pos != std::string::npos) {
-        auto key = utils::to_lower(utils::trim(line.substr(0, pos)));
-        auto val = utils::trim(line.substr(pos + 1));
-        if (!key.empty()) {
-            (*headers)[key] = val;
-        }
-    }
-    return size * nmemb;
-}
-
-HttpArtifact http_get(const std::string& url, int timeout_ms, const std::string& proxy_url, size_t max_body = 65536) {
-    curl_global();
-
-    HttpArtifact artifact;
-    auto start = std::chrono::steady_clock::now();
-
-    CURL* easy = curl_easy_init();
-    if (!easy) {
-        artifact.error = "curl_init_failed";
-        return artifact;
-    }
-
-    std::string body;
-    std::unordered_map<std::string, std::string> headers;
-
-    curl_easy_setopt(easy, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(easy, CURLOPT_MAXREDIRS, 5L);
-    curl_easy_setopt(easy, CURLOPT_TIMEOUT_MS, timeout_ms);
-    curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_body);
-    curl_easy_setopt(easy, CURLOPT_WRITEDATA, &body);
-    curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, write_header);
-    curl_easy_setopt(easy, CURLOPT_HEADERDATA, &headers);
-    curl_easy_setopt(easy, CURLOPT_USERAGENT, "Silicore-C/1.0");
-
-    if (!proxy_url.empty()) {
-        curl_easy_setopt(easy, CURLOPT_PROXY, proxy_url.c_str());
-    }
-
-    CURLcode res = curl_easy_perform(easy);
-
-    long status = 0;
-    char* effective = nullptr;
-    curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &status);
-    curl_easy_getinfo(easy, CURLINFO_EFFECTIVE_URL, &effective);
-
-    artifact.status = static_cast<int>(status);
-    artifact.final_url = effective ? effective : url;
-    artifact.headers = std::move(headers);
-
-    if (res != CURLE_OK) {
-        artifact.error = curl_easy_strerror(res);
-    }
-
-    if (body.size() > max_body) {
-        body.resize(max_body);
-    }
-    artifact.body = std::move(body);
-
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start
-    );
-    artifact.elapsed_ms = elapsed.count();
-
-    curl_easy_cleanup(easy);
-    return artifact;
+HttpArtifact to_artifact(const engines::HttpResponse& resp) {
+    HttpArtifact out;
+    out.status = resp.status_code;
+    out.final_url = resp.final_url;
+    out.headers = resp.headers;
+    out.body = resp.body;
+    out.error = resp.error;
+    out.elapsed_ms = resp.elapsed_ms;
+    return out;
 }
 
 std::vector<std::string> resolve_addresses(const std::string& domain) {
@@ -179,6 +101,13 @@ std::string extract_registrar(const json& root) {
     }
     return "";
 }
+
+enum class DomainRequestKind { Https, Http, Robots, Security, Ct, Rdap };
+
+struct DomainRequest {
+    DomainRequestKind kind;
+    engines::HttpRequest request;
+};
 
 } // namespace
 
@@ -295,62 +224,84 @@ DomainScanResult collect_domain_surface(const std::string& domain, const DomainS
         return resolve_addresses(result.target_domain);
     });
 
-    auto https_task = std::async(std::launch::async, [&]() {
-        return http_get("https://" + result.target_domain, options.timeout_ms, options.proxy_url, 16384);
-    });
+    std::vector<DomainRequest> requests;
+    requests.reserve(6);
+    auto push_request = [&](DomainRequestKind kind, const std::string& url, size_t max_body) {
+        engines::HttpRequest req;
+        req.url = url;
+        req.method = "GET";
+        req.timeout_ms = options.timeout_ms;
+        req.proxy_url = options.proxy_url;
+        req.max_body_bytes = max_body;
+        requests.push_back({kind, req});
+    };
 
-    auto http_task = std::async(std::launch::async, [&]() {
-        return http_get("http://" + result.target_domain, options.timeout_ms, options.proxy_url, 16384);
-    });
+    const std::string target = result.target_domain;
+    push_request(DomainRequestKind::Https, "https://" + target, 16384);
+    push_request(DomainRequestKind::Http, "http://" + target, 16384);
+    push_request(DomainRequestKind::Robots, "https://" + target + "/robots.txt", 2048);
+    push_request(DomainRequestKind::Security, "https://" + target + "/.well-known/security.txt", 2048);
 
-    auto robots_task = std::async(std::launch::async, [&]() {
-        return http_get("https://" + result.target_domain + "/robots.txt", options.timeout_ms, options.proxy_url, 2048);
-    });
-
-    auto security_task = std::async(std::launch::async, [&]() {
-        return http_get("https://" + result.target_domain + "/.well-known/security.txt", options.timeout_ms, options.proxy_url, 2048);
-    });
-
-    std::future<std::vector<std::string>> ct_task;
     if (options.include_ct) {
-        ct_task = std::async(std::launch::async, [&]() {
-            auto url = ct_base + "/?q=%25." + result.target_domain + "&output=json";
-            auto ct_resp = http_get(url, options.timeout_ms, options.proxy_url, 200000);
-            return parse_ct_subdomains(ct_resp.body, result.target_domain, options.max_subdomains);
-        });
+        std::string url = ct_base + "/?q=%25." + target + "&output=json";
+        push_request(DomainRequestKind::Ct, url, 200000);
+    }
+    if (options.include_rdap) {
+        std::string url = rdap_base + "/domain/" + target;
+        push_request(DomainRequestKind::Rdap, url, 200000);
     }
 
-    std::future<RdapInfo> rdap_task;
-    if (options.include_rdap) {
-        rdap_task = std::async(std::launch::async, [&]() {
-            auto url = rdap_base + "/domain/" + result.target_domain;
-            auto rdap_resp = http_get(url, options.timeout_ms, options.proxy_url, 200000);
-            return parse_rdap_info(rdap_resp.body);
-        });
+    std::vector<engines::HttpRequest> async_requests;
+    async_requests.reserve(requests.size());
+    for (const auto& entry : requests) {
+        async_requests.push_back(entry.request);
+    }
+
+    int concurrency = options.concurrency > 0 ? options.concurrency : static_cast<int>(async_requests.size());
+    if (concurrency <= 0) {
+        concurrency = 1;
+    }
+    auto responses = engines::run_async_batch(async_requests, concurrency);
+
+    for (size_t i = 0; i < responses.size() && i < requests.size(); ++i) {
+        const auto& resp = responses[i];
+        switch (requests[i].kind) {
+            case DomainRequestKind::Https: {
+                result.https = to_artifact(resp);
+                break;
+            }
+            case DomainRequestKind::Http: {
+                result.http = to_artifact(resp);
+                break;
+            }
+            case DomainRequestKind::Robots: {
+                auto artifact = to_artifact(resp);
+                result.robots_txt_present = artifact.status == 200 && !artifact.body.empty();
+                if (result.robots_txt_present) {
+                    result.robots_preview = artifact.body.substr(0, 512);
+                }
+                break;
+            }
+            case DomainRequestKind::Security: {
+                auto artifact = to_artifact(resp);
+                result.security_txt_present = artifact.status == 200 && !artifact.body.empty();
+                if (result.security_txt_present) {
+                    result.security_preview = artifact.body.substr(0, 512);
+                }
+                break;
+            }
+            case DomainRequestKind::Ct: {
+                result.subdomains = parse_ct_subdomains(resp.body, result.target_domain, options.max_subdomains);
+                break;
+            }
+            case DomainRequestKind::Rdap: {
+                result.rdap = parse_rdap_info(resp.body);
+                break;
+            }
+        }
     }
 
     result.resolved_addresses = resolve_task.get();
-    result.https = https_task.get();
-    result.http = http_task.get();
-    auto robots = robots_task.get();
-    auto security = security_task.get();
-
-    if (options.include_ct) {
-        result.subdomains = ct_task.get();
-    }
-    if (options.include_rdap) {
-        result.rdap = rdap_task.get();
-    }
-
-    result.robots_txt_present = robots.status == 200 && !robots.body.empty();
-    if (result.robots_txt_present) {
-        result.robots_preview = robots.body.substr(0, 512);
-    }
-
-    result.security_txt_present = security.status == 200 && !security.body.empty();
-    if (result.security_txt_present) {
-        result.security_preview = security.body.substr(0, 512);
-    }
 
     auto http_loc = utils::to_lower(result.http.final_url);
     if (result.http.status >= 300 && result.http.status < 400 && http_loc.rfind("https://", 0) == 0) {

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace silicore::engines {
@@ -10,6 +12,7 @@ struct HttpRequest {
     std::string method;   // GET | HEAD
     int timeout_ms = 20000;
     std::string proxy_url;
+    size_t max_body_bytes = 0;
 };
 
 struct HttpResponse {
@@ -18,6 +21,7 @@ struct HttpResponse {
     std::string final_url;
     long elapsed_ms = 0;
     std::string error;
+    std::unordered_map<std::string, std::string> headers;
 };
 
 std::vector<HttpResponse> run_async_batch(

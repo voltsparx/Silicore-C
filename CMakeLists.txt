@@ -39,9 +39,12 @@ set(SILICORE_CORE_SOURCES
   core/execution_policy.cpp
   core/domain/entity.cpp
   core/engines/async_engine.cpp
+  core/engines/cpu_engine.cpp
   core/engines/engine_base.cpp
+  core/engines/fusion_engine.cpp
   core/engines/health_monitor.cpp
   core/engines/stabilizer_engine.cpp
+  core/engines/scheduler.cpp
   core/engines/thread_engine.cpp
   core/engines/parallel_engine.cpp
   core/collect/platform_schema.cpp

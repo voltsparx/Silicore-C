@@ -12,7 +12,9 @@ struct CliArgs {
     std::vector<std::string> plugins;
     bool all_plugins = false;
     bool html_output = false;
-    bool json_output = true;
+    bool json_output = false;
+    bool text_output = false;
+    std::string output_dir;
     bool tor_enabled = false;
     std::string proxy_url;
     int timeout_ms = 0;

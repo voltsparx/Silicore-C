@@ -1,0 +1,1 @@
+Core filters placeholder (Silica-X parity scaffold).\n

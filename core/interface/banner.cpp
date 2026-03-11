@@ -20,7 +20,7 @@ void show_banner(const std::string& anonymity_status) {
     };
 
     for (const auto& row : left_right_lines) {
-        std::cout << c(row.first, Colors::GREY) << c(row.second, Colors::YELLOW) << "\n";
+        std::cout << c(row.first, Colors::GREY) << c(row.second, Colors::SKY) << "\n";
     }
 
     std::cout << c(std::string("                                                                          v") + foundation::VERSION, Colors::GREY) << "\n";

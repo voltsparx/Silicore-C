@@ -38,8 +38,8 @@ const char* status_color(const std::string& status) {
     using namespace silicore::interface;
     if (status == "FOUND") return Colors::GREEN;
     if (status == "NOT_FOUND") return Colors::GREY;
-    if (status == "BLOCKED") return Colors::YELLOW;
-    if (status == "INVALID_USERNAME") return Colors::YELLOW;
+    if (status == "BLOCKED") return Colors::SKY;
+    if (status == "INVALID_USERNAME") return Colors::SKY;
     if (status == "ERROR") return Colors::RED;
     return Colors::GREY;
 }
@@ -97,6 +97,7 @@ json build_report_payload(
     const std::vector<domain::ProfileEntity>& profiles,
     const collect::DomainScanResult* domain_result,
     const std::vector<extensions::PluginResult>& plugins,
+    const json* fusion_result,
     const std::string& mode
 ) {
     json payload;
@@ -114,6 +115,11 @@ json build_report_payload(
         payload["domain_result"] = nullptr;
     }
     payload["plugins"] = build_plugin_json(plugins);
+    if (fusion_result) {
+        payload["fusion_result"] = *fusion_result;
+    } else {
+        payload["fusion_result"] = nullptr;
+    }
 
     int found = 0;
     int not_found = 0;
@@ -141,8 +147,8 @@ std::string render_cli_report(const json& payload) {
     std::ostringstream out;
     using namespace silicore::interface;
 
-    out << c(std::string(symbol("major")) + " " + foundation::PROJECT_NAME + " Report", Colors::BLUE) << "\n";
-    out << c(std::string(48, '='), Colors::BLUE) << "\n";
+    out << c(std::string(symbol("major")) + " " + foundation::PROJECT_NAME + " Report", Colors::SKY_DARK) << "\n";
+    out << c(std::string(48, '='), Colors::SKY_DARK) << "\n";
     out << c(std::string(symbol("action")) + " Target: " + payload.value("target", "-"), Colors::CYAN) << "\n";
     if (payload.contains("metadata")) {
         const auto& meta = payload["metadata"];
@@ -152,15 +158,15 @@ std::string render_cli_report(const json& payload) {
 
     if (payload.contains("summary")) {
         const auto& summary = payload["summary"];
-        out << c(std::string(symbol("minor")) + " Summary", Colors::BLUE) << "\n";
+        out << c(std::string(symbol("minor")) + " Summary", Colors::SKY_DARK) << "\n";
         out << c("Found: ", Colors::GREEN) << summary.value("found_count", 0)
             << c(" | Not Found: ", Colors::GREY) << summary.value("not_found_count", 0)
-            << c(" | Blocked: ", Colors::YELLOW) << summary.value("blocked_count", 0)
+            << c(" | Blocked: ", Colors::SKY) << summary.value("blocked_count", 0)
             << c(" | Error: ", Colors::RED) << summary.value("error_count", 0) << "\n";
     }
 
     if (payload.contains("results") && payload["results"].is_array()) {
-        out << "\n" << c(std::string(symbol("major")) + " Profiles", Colors::BLUE) << "\n";
+        out << "\n" << c(std::string(symbol("major")) + " Profiles", Colors::SKY_DARK) << "\n";
         for (const auto& entry : payload["results"]) {
             std::string status = entry.value("status", "-");
             out << c(std::string(symbol("bullet")) + " " + entry.value("platform", "-") + ": ", Colors::CYAN)
@@ -170,25 +176,66 @@ std::string render_cli_report(const json& payload) {
     }
 
     if (payload.contains("domain_result") && payload["domain_result"].is_object()) {
-        auto dr = payload["domain_result"];
-        out << "\n" << c(std::string(symbol("major")) + " Domain Surface", Colors::BLUE) << "\n";
+        const auto& dr = payload["domain_result"];
+        out << "\n" << c(std::string(symbol("major")) + " Domain Surface", Colors::SKY_DARK) << "\n";
         out << c(std::string(symbol("bullet")) + " Resolved: ", Colors::CYAN)
             << utils::join(dr.value("resolved_addresses", std::vector<std::string>{}), ", ") << "\n";
         out << c(std::string(symbol("bullet")) + " Subdomains: ", Colors::CYAN)
             << dr.value("subdomains", json::array()).size() << "\n";
-        out << c(std::string(symbol("bullet")) + " RDAP Handle: ", Colors::CYAN)
-            << dr["rdap"].value("handle", "-") << "\n";
+        if (dr.contains("rdap") && dr["rdap"].is_object()) {
+            out << c(std::string(symbol("bullet")) + " RDAP Handle: ", Colors::CYAN)
+                << dr["rdap"].value("handle", "-") << "\n";
+        }
         out << c(std::string(symbol("bullet")) + " Robots.txt: ", Colors::CYAN)
             << (dr.value("robots_txt_present", false) ? "yes" : "no") << "\n";
         out << c(std::string(symbol("bullet")) + " Security.txt: ", Colors::CYAN)
             << (dr.value("security_txt_present", false) ? "yes" : "no") << "\n";
     }
 
+    if (payload.contains("fusion_result") && payload["fusion_result"].is_object()) {
+        const auto& fr = payload["fusion_result"];
+        out << "\n" << c(std::string(symbol("major")) + " Fusion", Colors::SKY_DARK) << "\n";
+        out << c(std::string(symbol("bullet")) + " Confidence: ", Colors::CYAN)
+            << fr.value("confidence_score", 0) << "\n";
+        if (fr.contains("profile") && fr["profile"].is_object()) {
+            out << c(std::string(symbol("bullet")) + " Found Profiles: ", Colors::CYAN)
+                << fr["profile"].value("found_profiles", 0) << "\n";
+        }
+        if (fr.contains("domain") && fr["domain"].is_object()) {
+            out << c(std::string(symbol("bullet")) + " Subdomains: ", Colors::CYAN)
+                << fr["domain"].value("subdomain_count", 0) << "\n";
+        }
+        if (fr.contains("anomalies") && fr["anomalies"].is_array() && !fr["anomalies"].empty()) {
+            out << c(std::string(symbol("bullet")) + " Anomalies: ", Colors::CYAN);
+            bool first = true;
+            for (const auto& item : fr["anomalies"]) {
+                if (!item.is_string()) {
+                    continue;
+                }
+                if (!first) {
+                    out << ", ";
+                }
+                out << item.get<std::string>();
+                first = false;
+            }
+            out << "\n";
+        }
+    }
+
     if (payload.contains("plugins") && payload["plugins"].is_array() && !payload["plugins"].empty()) {
-        out << "\n" << c(std::string(symbol("major")) + " Plugins", Colors::BLUE) << "\n";
-        for (const auto& entry : payload["plugins"]) {
-            out << c(std::string(symbol("feature")) + " " + entry.value("id", "-"), Colors::YELLOW)
-                << c(" (severity " + std::to_string(entry.value("severity", 0)) + ")", Colors::GREY) << "\n";
+        out << "\n" << c(std::string(symbol("major")) + " Plugins", Colors::SKY_DARK) << "\n";
+        for (const auto& plugin : payload["plugins"]) {
+            std::string title = plugin.value("title", plugin.value("id", "-"));
+            out << c(std::string(symbol("bullet")) + " " + title, Colors::CYAN);
+            if (plugin.contains("version")) {
+                out << c(" v" + plugin.value("version", ""), Colors::GREY);
+            }
+            out << c(" (severity " + std::to_string(plugin.value("severity", 0)) + ")", Colors::GREY) << "\n";
+            if (plugin.contains("output")) {
+                out << c("  output: ", Colors::GREY) << plugin["output"].dump() << "\n";
+            } else if (plugin.contains("output_raw")) {
+                out << c("  output: ", Colors::GREY) << plugin.value("output_raw", "") << "\n";
+            }
         }
     }
 
@@ -196,44 +243,158 @@ std::string render_cli_report(const json& payload) {
 }
 
 std::string render_html_report(const json& payload) {
+    auto html_escape = [](const std::string& input) {
+        std::string out;
+        out.reserve(input.size());
+        for (char ch : input) {
+            switch (ch) {
+                case '&': out += "&amp;"; break;
+                case '<': out += "&lt;"; break;
+                case '>': out += "&gt;"; break;
+                case '"': out += "&quot;"; break;
+                case '\'': out += "&#39;"; break;
+                default: out.push_back(ch); break;
+            }
+        }
+        return out;
+    };
+
     std::ostringstream out;
-    out << "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Silicore-C Report</title>";
+    out << "<!doctype html>";
+    out << "<html lang='en'><head>";
+    out << "<meta charset='utf-8'>";
+    out << "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    out << "<title>" << foundation::PROJECT_NAME << " Report</title>";
     out << "<style>";
-    out << "body{font-family:\"Segoe UI\",sans-serif;margin:24px;background:#f7f9fc;color:#0e1a2b;}";
-    out << ".card{border:1px solid #d7e0ec;background:#fff;border-radius:10px;padding:14px;margin-bottom:12px;}";
-    out << "table{width:100%;border-collapse:collapse;}th,td{border-bottom:1px solid #e1e8f0;padding:8px;text-align:left;}";
-    out << "th{background:#f1f5fb;} .muted{color:#58657a;}";
-    out << "</style></head><body>";
-    out << "<h1>Silicore-C Report</h1>";
-    out << "<div class='card'><strong>Target:</strong> " << payload.value("target", "-") << "</div>";
+    out << "body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0f1720;color:#e2e8f0;}";
+    out << ".wrap{max-width:1100px;margin:0 auto;padding:32px;}";
+    out << "h1,h2{margin:0 0 8px 0;}";
+    out << ".header{padding:16px 20px;background:#162231;border-radius:12px;border:1px solid #1f2f44;}";
+    out << ".meta{color:#9fb3c8;font-size:14px;}";
+    out << ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:16px;}";
+    out << ".card{background:#162231;border:1px solid #1f2f44;border-radius:12px;padding:16px;}";
+    out << ".label{color:#9fb3c8;font-size:12px;text-transform:uppercase;letter-spacing:.08em;}";
+    out << ".value{font-size:20px;margin-top:6px;color:#87ceeb;}";
+    out << "table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px;}";
+    out << "th,td{text-align:left;padding:10px;border-bottom:1px solid #1f2f44;}";
+    out << "th{color:#9fb3c8;font-weight:600;}";
+    out << ".badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#1f2f44;color:#e2e8f0;font-size:12px;}";
+    out << ".section{margin-top:24px;}";
+    out << ".accent{color:#87ceeb;}";
+    out << "</style></head><body><div class='wrap'>";
+
+    std::string target = payload.value("target", "-");
+    std::string mode = "-";
+    std::string generated = "-";
+    if (payload.contains("metadata")) {
+        const auto& meta = payload["metadata"];
+        mode = meta.value("mode", "-");
+        generated = meta.value("generated_at_utc", "-");
+    }
+    out << "<div class='header'>";
+    out << "<h1>" << foundation::PROJECT_NAME << " Report</h1>";
+    out << "<div class='meta'>Target: <span class='accent'>" << html_escape(target) << "</span>";
+    out << " | Mode: " << html_escape(mode);
+    out << " | Generated: " << html_escape(generated) << "</div>";
+    out << "</div>";
 
     if (payload.contains("summary")) {
         const auto& summary = payload["summary"];
-        out << "<div class='card'><strong>Summary:</strong> Found " << summary.value("found_count", 0)
-            << ", Not Found " << summary.value("not_found_count", 0)
-            << ", Blocked " << summary.value("blocked_count", 0)
-            << ", Error " << summary.value("error_count", 0) << "</div>";
-    }
-
-    if (payload.contains("results") && payload["results"].is_array()) {
-        out << "<div class='card'><h2>Profiles</h2><ul>";
-        for (const auto& entry : payload["results"]) {
-            out << "<li>" << entry.value("platform", "-") << " : " << entry.value("status", "-")
-                << " (<a href='" << entry.value("url", "-") << "'>link</a>)</li>";
-        }
-        out << "</ul></div>";
-    }
-
-    if (payload.contains("domain_result") && payload["domain_result"].is_object()) {
-        auto dr = payload["domain_result"];
-        out << "<div class='card'><h2>Domain Surface</h2>";
-        out << "<div><strong>Resolved:</strong> " << utils::join(dr.value("resolved_addresses", std::vector<std::string>{}), ", ") << "</div>";
-        out << "<div><strong>Subdomains:</strong> " << dr.value("subdomains", json::array()).size() << "</div>";
-        out << "<div><strong>RDAP Handle:</strong> " << dr["rdap"].value("handle", "-") << "</div>";
+        out << "<div class='grid'>";
+        out << "<div class='card'><div class='label'>Found</div><div class='value'>"
+            << summary.value("found_count", 0) << "</div></div>";
+        out << "<div class='card'><div class='label'>Not Found</div><div class='value'>"
+            << summary.value("not_found_count", 0) << "</div></div>";
+        out << "<div class='card'><div class='label'>Blocked</div><div class='value'>"
+            << summary.value("blocked_count", 0) << "</div></div>";
+        out << "<div class='card'><div class='label'>Errors</div><div class='value'>"
+            << summary.value("error_count", 0) << "</div></div>";
         out << "</div>";
     }
 
-    out << "</body></html>";
+    if (payload.contains("results") && payload["results"].is_array()) {
+        out << "<div class='section'>";
+        out << "<h2>Profiles</h2>";
+        out << "<table><thead><tr><th>Platform</th><th>Status</th><th>URL</th><th>Confidence</th><th>HTTP</th><th>RT (ms)</th></tr></thead><tbody>";
+        for (const auto& entry : payload["results"]) {
+            out << "<tr>";
+            out << "<td>" << html_escape(entry.value("platform", "-")) << "</td>";
+            out << "<td><span class='badge'>" << html_escape(entry.value("status", "-")) << "</span></td>";
+            out << "<td>" << html_escape(entry.value("url", "-")) << "</td>";
+            out << "<td>" << entry.value("confidence", 0) << "</td>";
+            out << "<td>" << entry.value("http_status", 0) << "</td>";
+            out << "<td>" << entry.value("response_time_ms", 0) << "</td>";
+            out << "</tr>";
+        }
+        out << "</tbody></table></div>";
+    }
+
+    if (payload.contains("domain_result") && payload["domain_result"].is_object()) {
+        const auto& dr = payload["domain_result"];
+        out << "<div class='section'><h2>Domain Surface</h2>";
+        out << "<div class='card'>";
+        out << "<div><strong>Resolved:</strong> "
+            << html_escape(utils::join(dr.value("resolved_addresses", std::vector<std::string>{}), ", "))
+            << "</div>";
+        out << "<div><strong>Subdomains:</strong> " << dr.value("subdomains", json::array()).size() << "</div>";
+        if (dr.contains("rdap") && dr["rdap"].is_object()) {
+            out << "<div><strong>RDAP Handle:</strong> " << html_escape(dr["rdap"].value("handle", "-")) << "</div>";
+            out << "<div><strong>Registrar:</strong> " << html_escape(dr["rdap"].value("registrar", "-")) << "</div>";
+        }
+        out << "<div><strong>Robots.txt:</strong> " << (dr.value("robots_txt_present", false) ? "yes" : "no") << "</div>";
+        out << "<div><strong>Security.txt:</strong> " << (dr.value("security_txt_present", false) ? "yes" : "no") << "</div>";
+        out << "</div></div>";
+    }
+
+    if (payload.contains("fusion_result") && payload["fusion_result"].is_object()) {
+        const auto& fr = payload["fusion_result"];
+        out << "<div class='section'><h2>Fusion Summary</h2>";
+        out << "<div class='card'>";
+        out << "<div><strong>Confidence:</strong> " << fr.value("confidence_score", 0) << "</div>";
+        if (fr.contains("profile") && fr["profile"].is_object()) {
+            out << "<div><strong>Found Profiles:</strong> " << fr["profile"].value("found_profiles", 0) << "</div>";
+        }
+        if (fr.contains("domain") && fr["domain"].is_object()) {
+            out << "<div><strong>Subdomains:</strong> " << fr["domain"].value("subdomain_count", 0) << "</div>";
+        }
+        if (fr.contains("anomalies") && fr["anomalies"].is_array() && !fr["anomalies"].empty()) {
+            out << "<div><strong>Anomalies:</strong> ";
+            bool first = true;
+            for (const auto& item : fr["anomalies"]) {
+                if (!item.is_string()) {
+                    continue;
+                }
+                if (!first) {
+                    out << ", ";
+                }
+                out << html_escape(item.get<std::string>());
+                first = false;
+            }
+            out << "</div>";
+        }
+        out << "</div></div>";
+    }
+
+    if (payload.contains("plugins") && payload["plugins"].is_array() && !payload["plugins"].empty()) {
+        out << "<div class='section'><h2>Plugins</h2>";
+        for (const auto& plugin : payload["plugins"]) {
+            out << "<div class='card'>";
+            out << "<div><strong>" << html_escape(plugin.value("title", plugin.value("id", "-"))) << "</strong>";
+            if (plugin.contains("version")) {
+                out << " <span class='badge'>v" << html_escape(plugin.value("version", "")) << "</span>";
+            }
+            out << " <span class='badge'>severity " << plugin.value("severity", 0) << "</span></div>";
+            if (plugin.contains("output")) {
+                out << "<pre>" << html_escape(plugin["output"].dump(2)) << "</pre>";
+            } else if (plugin.contains("output_raw")) {
+                out << "<pre>" << html_escape(plugin.value("output_raw", "")) << "</pre>";
+            }
+            out << "</div>";
+        }
+        out << "</div>";
+    }
+
+    out << "</div></body></html>";
     return out.str();
 }
 
@@ -265,3 +426,4 @@ std::string sanitize_target(const std::string& target) {
 }
 
 } // namespace silicore::reporting
+

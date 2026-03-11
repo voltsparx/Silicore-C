@@ -1,0 +1,1 @@
+GitHub metadata placeholder for Silicore-C.\n

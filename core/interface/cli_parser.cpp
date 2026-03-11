@@ -46,6 +46,10 @@ CliArgs parse_tokens(const std::vector<std::string>& tokens) {
             args.html_output = true;
         } else if (token == "--json") {
             args.json_output = true;
+        } else if (token == "--txt") {
+            args.text_output = true;
+        } else if ((token == "--out" || token == "--output" || token == "--output-dir") && i + 1 < tokens.size()) {
+            args.output_dir = tokens[++i];
         } else if (token == "--plugins" && i + 1 < tokens.size()) {
             auto list = utils::split(tokens[++i], ',');
             for (auto& item : list) {
@@ -76,7 +80,11 @@ CliArgs parse_args(int argc, char* argv[]) {
         args.prompt_mode = true;
         return args;
     }
-    return parse_tokens(tokens);
+    auto args = parse_tokens(tokens);
+    if (!args.html_output && !args.json_output && !args.text_output) {
+        args.text_output = true;
+    }
+    return args;
 }
 
 CliArgs parse_line(const std::string& line) {

@@ -41,6 +41,7 @@ struct DomainScanOptions {
     bool include_ct = true;
     bool include_rdap = true;
     int max_subdomains = 250;
+    int concurrency = 25;
     std::string proxy_url;
     std::string ct_base_url;
     std::string rdap_base_url;

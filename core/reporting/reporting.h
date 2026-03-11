@@ -20,6 +20,7 @@ json build_report_payload(
     const std::vector<domain::ProfileEntity>& profiles,
     const collect::DomainScanResult* domain_result,
     const std::vector<extensions::PluginResult>& plugins,
+    const json* fusion_result,
     const std::string& mode
 );
 

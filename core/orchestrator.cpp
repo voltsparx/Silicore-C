@@ -1,5 +1,7 @@
 #include "core/orchestrator.h"
 
+#include <algorithm>
+
 namespace silicore {
 
 Orchestrator::Orchestrator(std::vector<collect::PlatformConfig> platforms)
@@ -41,8 +43,9 @@ SurfaceRunResult Orchestrator::run_surface(
     options.include_rdap = true;
     options.max_subdomains = 250;
     options.proxy_url = proxy_url;
+    int adjusted = stabilizer_.adjust_concurrency(policy.concurrency, health_monitor_.snapshot());
+    options.concurrency = std::max(4, std::min(adjusted, 64));
     result.scan_result = collect::collect_domain_surface(domain, options);
-    (void)policy;
     engines::EngineResult er;
     er.name = "surface";
     er.execution_time = static_cast<double>(result.scan_result.https.elapsed_ms) / 1000.0;

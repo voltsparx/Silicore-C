@@ -1,13 +1,26 @@
 #include "core/engines/async_engine.h"
 
+#include "core/utils/strings.h"
+
 #include <curl/curl.h>
 #include <chrono>
 #include <deque>
 #include <memory>
+#include <unordered_map>
 
 namespace silicore::engines {
 
 namespace {
+
+struct CurlGlobal {
+    CurlGlobal() { curl_global_init(CURL_GLOBAL_ALL); }
+    ~CurlGlobal() { curl_global_cleanup(); }
+};
+
+CurlGlobal& ensure_curl_global() {
+    static CurlGlobal global;
+    return global;
+}
 
 struct CurlContext {
     size_t index = 0;
@@ -61,6 +74,29 @@ void setup_easy(CURL* easy, const HttpRequest& req, CurlContext* ctx) {
     }
 }
 
+std::unordered_map<std::string, std::string> parse_headers(const std::string& buffer) {
+    std::unordered_map<std::string, std::string> headers;
+    size_t start = 0;
+    while (start < buffer.size()) {
+        size_t end = buffer.find("\r\n", start);
+        if (end == std::string::npos) {
+            end = buffer.size();
+        }
+        std::string line = buffer.substr(start, end - start);
+        start = end + 2;
+        if (line.empty() || line.find(':') == std::string::npos) {
+            continue;
+        }
+        auto pos = line.find(':');
+        std::string key = utils::to_lower(utils::trim(line.substr(0, pos)));
+        std::string val = utils::trim(line.substr(pos + 1));
+        if (!key.empty()) {
+            headers[key] = val;
+        }
+    }
+    return headers;
+}
+
 } // namespace
 
 std::vector<HttpResponse> run_async_batch(
@@ -76,7 +112,7 @@ std::vector<HttpResponse> run_async_batch(
         concurrency_limit = 1;
     }
 
-    curl_global_init(CURL_GLOBAL_ALL);
+    ensure_curl_global();
 
     CURLM* multi = curl_multi_init();
     std::deque<size_t> pending;
@@ -91,8 +127,9 @@ std::vector<HttpResponse> run_async_batch(
         auto ctx = std::make_unique<CurlContext>();
         ctx->index = idx;
         ctx->start = std::chrono::steady_clock::now();
-        ctx->max_body = max_body_bytes;
-        setup_easy(easy, requests[idx], ctx.get());
+        const auto& req = requests[idx];
+        ctx->max_body = req.max_body_bytes > 0 ? req.max_body_bytes : max_body_bytes;
+        setup_easy(easy, req, ctx.get());
         contexts[idx] = std::move(ctx);
         curl_multi_add_handle(multi, easy);
     };
@@ -137,6 +174,7 @@ std::vector<HttpResponse> run_async_batch(
                 if (msg->data.result != CURLE_OK) {
                     ctx->response.error = ctx->error_buffer[0] ? ctx->error_buffer : curl_easy_strerror(msg->data.result);
                 }
+                ctx->response.headers = parse_headers(ctx->header_buffer);
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now() - ctx->start
                 );
@@ -157,7 +195,6 @@ std::vector<HttpResponse> run_async_batch(
     }
 
     curl_multi_cleanup(multi);
-    curl_global_cleanup();
 
     return results;
 }
