@@ -32,7 +32,10 @@ public:
         const std::string& domain,
         const ExecutionPolicy& policy,
         int timeout_ms,
-        const std::string& proxy_url
+        const std::string& proxy_url,
+        bool include_ct,
+        bool include_rdap,
+        int max_subdomains
     );
 
 private:
