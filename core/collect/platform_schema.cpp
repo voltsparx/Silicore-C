@@ -1,5 +1,5 @@
 #include "core/collect/platform_schema.h"
-#include "platforms/platforms.h"
+#include "core/collect/platform_registry.h"
 
 namespace silicore::collect {
 

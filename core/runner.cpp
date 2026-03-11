@@ -2,8 +2,12 @@
 
 #include "core/collect/platform_schema.h"
 #include "core/extensions/plugin_loader.h"
+#include "core/interface/banner.h"
 #include "core/interface/cli_parser.h"
 #include "core/interface/prompt.h"
+#include "core/interface/colors.h"
+#include "core/interface/symbols.h"
+#include "core/foundation/metadata.h"
 #include "core/execution_policy.h"
 #include "core/orchestrator.h"
 #include "core/reporting/reporting.h"
@@ -53,20 +57,21 @@ std::filesystem::path resolve_plugin_dir() {
 }
 
 void print_help() {
-    std::cout << "Silicore-C v1.0\n";
-    std::cout << "Commands:\n";
-    std::cout << "  profile <username> [--preset fast|balanced|deep|max] [--timeout ms] [--concurrency n] [--proxy url] [--tor] [--html] [--json] [--plugins a,b] [--all-plugins]\n";
-    std::cout << "  surface <domain> [--preset fast|balanced|deep|max] [--timeout ms] [--proxy url] [--tor] [--html] [--json] [--plugins a,b] [--all-plugins]\n";
-    std::cout << "  show plugins\n";
-    std::cout << "  show platforms\n";
-    std::cout << "  help\n";
+    using namespace interface;
+    std::cout << c(std::string(symbol("major")) + " " + foundation::PROJECT_NAME + " v" + foundation::VERSION, Colors::BLUE) << "\n";
+    std::cout << c(std::string(symbol("action")) + " Commands:", Colors::CYAN) << "\n";
+    std::cout << c("  profile <username> [--preset fast|balanced|deep|max] [--timeout ms] [--concurrency n] [--proxy url] [--tor] [--html] [--json] [--plugins a,b] [--all-plugins]", Colors::GREY) << "\n";
+    std::cout << c("  surface <domain> [--preset fast|balanced|deep|max] [--timeout ms] [--proxy url] [--tor] [--html] [--json] [--plugins a,b] [--all-plugins]", Colors::GREY) << "\n";
+    std::cout << c("  show plugins", Colors::GREY) << "\n";
+    std::cout << c("  show platforms", Colors::GREY) << "\n";
+    std::cout << c("  help", Colors::GREY) << "\n";
 }
 
 std::vector<collect::PlatformConfig> load_platforms_safe() {
     try {
         return collect::load_platforms("platforms");
     } catch (const std::exception& exc) {
-        std::cerr << "Platform load error: " << exc.what() << "\n";
+        std::cerr << interface::c(std::string(interface::symbol("warn")) + " Platform load error: " + exc.what(), interface::Colors::RED) << "\n";
         return {};
     }
 }
@@ -135,12 +140,12 @@ int handle_command(const interface::CliArgs& args) {
     }
 
     if (command != "profile" && command != "surface") {
-        std::cerr << "Unknown command. Use help.\n";
+        std::cerr << interface::c(std::string(interface::symbol("warn")) + " Unknown command. Use help.", interface::Colors::YELLOW) << "\n";
         return 1;
     }
 
     if (args.targets.empty()) {
-        std::cerr << "No target provided.\n";
+        std::cerr << interface::c(std::string(interface::symbol("error")) + " No target provided.", interface::Colors::RED) << "\n";
         return 1;
     }
 
@@ -208,6 +213,7 @@ int handle_command(const interface::CliArgs& args) {
 int run(int argc, char* argv[]) {
     auto args = interface::parse_args(argc, argv);
     if (args.prompt_mode) {
+        interface::show_banner("No Anonymization");
         return interface::run_prompt([](const interface::CliArgs& inner) {
             return handle_command(inner);
         });

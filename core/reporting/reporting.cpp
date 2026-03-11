@@ -1,6 +1,8 @@
 #include "core/reporting/reporting.h"
 
 #include "core/interface/colors.h"
+#include "core/interface/symbols.h"
+#include "core/foundation/metadata.h"
 #include "core/utils/strings.h"
 #include "core/utils/time.h"
 
@@ -30,6 +32,16 @@ json build_plugin_json(const std::vector<extensions::PluginResult>& plugins) {
         out.push_back(entry);
     }
     return out;
+}
+
+const char* status_color(const std::string& status) {
+    using namespace silicore::interface;
+    if (status == "FOUND") return Colors::GREEN;
+    if (status == "NOT_FOUND") return Colors::GREY;
+    if (status == "BLOCKED") return Colors::YELLOW;
+    if (status == "INVALID_USERNAME") return Colors::YELLOW;
+    if (status == "ERROR") return Colors::RED;
+    return Colors::GREY;
 }
 
 } // namespace
@@ -91,7 +103,7 @@ json build_report_payload(
     payload["metadata"] = {
         {"generated_at_utc", utils::utc_timestamp()},
         {"mode", mode},
-        {"framework", "Silicore-C v1.0"},
+        {"framework", std::string(foundation::PROJECT_NAME) + " v" + foundation::VERSION},
     };
 
     payload["target"] = target;
@@ -129,40 +141,54 @@ std::string render_cli_report(const json& payload) {
     std::ostringstream out;
     using namespace silicore::interface;
 
-    out << Colors::SKY << "SILICORE-C" << Colors::RESET << "\n";
-    out << Colors::SKY_DARK << "========================================" << Colors::RESET << "\n";
-    out << "Target: " << payload.value("target", "-") << "\n";
+    out << c(std::string(symbol("major")) + " " + foundation::PROJECT_NAME + " Report", Colors::BLUE) << "\n";
+    out << c(std::string(48, '='), Colors::BLUE) << "\n";
+    out << c(std::string(symbol("action")) + " Target: " + payload.value("target", "-"), Colors::CYAN) << "\n";
+    if (payload.contains("metadata")) {
+        const auto& meta = payload["metadata"];
+        out << c(std::string(symbol("feature")) + " Mode: " + meta.value("mode", "-"), Colors::CYAN) << "\n";
+        out << c(std::string(symbol("feature")) + " Generated: " + meta.value("generated_at_utc", "-"), Colors::GREY) << "\n";
+    }
 
     if (payload.contains("summary")) {
         const auto& summary = payload["summary"];
-        out << "Found: " << summary.value("found_count", 0)
-            << " | Not Found: " << summary.value("not_found_count", 0)
-            << " | Blocked: " << summary.value("blocked_count", 0)
-            << " | Error: " << summary.value("error_count", 0) << "\n";
+        out << c(std::string(symbol("minor")) + " Summary", Colors::BLUE) << "\n";
+        out << c("Found: ", Colors::GREEN) << summary.value("found_count", 0)
+            << c(" | Not Found: ", Colors::GREY) << summary.value("not_found_count", 0)
+            << c(" | Blocked: ", Colors::YELLOW) << summary.value("blocked_count", 0)
+            << c(" | Error: ", Colors::RED) << summary.value("error_count", 0) << "\n";
     }
 
     if (payload.contains("results") && payload["results"].is_array()) {
-        out << Colors::SKY << "Profiles" << Colors::RESET << "\n";
+        out << "\n" << c(std::string(symbol("major")) + " Profiles", Colors::BLUE) << "\n";
         for (const auto& entry : payload["results"]) {
-            out << "- " << entry.value("platform", "-") << ": " << entry.value("status", "-")
-                << " (" << entry.value("url", "-") << ")\n";
+            std::string status = entry.value("status", "-");
+            out << c(std::string(symbol("bullet")) + " " + entry.value("platform", "-") + ": ", Colors::CYAN)
+                << c(status, status_color(status))
+                << c(" (" + entry.value("url", "-") + ")", Colors::GREY) << "\n";
         }
     }
 
     if (payload.contains("domain_result") && payload["domain_result"].is_object()) {
         auto dr = payload["domain_result"];
-        out << Colors::SKY << "Domain Surface" << Colors::RESET << "\n";
-        out << "Resolved: " << utils::join(dr.value("resolved_addresses", std::vector<std::string>{}), ", ") << "\n";
-        out << "Subdomains: " << dr.value("subdomains", json::array()).size() << "\n";
-        out << "RDAP Handle: " << dr["rdap"].value("handle", "-") << "\n";
-        out << "Robots.txt: " << (dr.value("robots_txt_present", false) ? "yes" : "no") << "\n";
-        out << "Security.txt: " << (dr.value("security_txt_present", false) ? "yes" : "no") << "\n";
+        out << "\n" << c(std::string(symbol("major")) + " Domain Surface", Colors::BLUE) << "\n";
+        out << c(std::string(symbol("bullet")) + " Resolved: ", Colors::CYAN)
+            << utils::join(dr.value("resolved_addresses", std::vector<std::string>{}), ", ") << "\n";
+        out << c(std::string(symbol("bullet")) + " Subdomains: ", Colors::CYAN)
+            << dr.value("subdomains", json::array()).size() << "\n";
+        out << c(std::string(symbol("bullet")) + " RDAP Handle: ", Colors::CYAN)
+            << dr["rdap"].value("handle", "-") << "\n";
+        out << c(std::string(symbol("bullet")) + " Robots.txt: ", Colors::CYAN)
+            << (dr.value("robots_txt_present", false) ? "yes" : "no") << "\n";
+        out << c(std::string(symbol("bullet")) + " Security.txt: ", Colors::CYAN)
+            << (dr.value("security_txt_present", false) ? "yes" : "no") << "\n";
     }
 
     if (payload.contains("plugins") && payload["plugins"].is_array() && !payload["plugins"].empty()) {
-        out << Colors::SKY << "Plugins" << Colors::RESET << "\n";
+        out << "\n" << c(std::string(symbol("major")) + " Plugins", Colors::BLUE) << "\n";
         for (const auto& entry : payload["plugins"]) {
-            out << "- " << entry.value("id", "-") << " (severity " << entry.value("severity", 0) << ")\n";
+            out << c(std::string(symbol("feature")) + " " + entry.value("id", "-"), Colors::YELLOW)
+                << c(" (severity " + std::to_string(entry.value("severity", 0)) + ")", Colors::GREY) << "\n";
         }
     }
 
@@ -172,10 +198,13 @@ std::string render_cli_report(const json& payload) {
 std::string render_html_report(const json& payload) {
     std::ostringstream out;
     out << "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Silicore-C Report</title>";
-    out << "<style>body{font-family:Arial, sans-serif;background:#0A0A0F;color:#f1f1f1;}";
-    out << ".header{color:#87CEEB;} .card{background:#11131a;padding:16px;margin:12px 0;border-radius:8px;}";
+    out << "<style>";
+    out << "body{font-family:\"Segoe UI\",sans-serif;margin:24px;background:#f7f9fc;color:#0e1a2b;}";
+    out << ".card{border:1px solid #d7e0ec;background:#fff;border-radius:10px;padding:14px;margin-bottom:12px;}";
+    out << "table{width:100%;border-collapse:collapse;}th,td{border-bottom:1px solid #e1e8f0;padding:8px;text-align:left;}";
+    out << "th{background:#f1f5fb;} .muted{color:#58657a;}";
     out << "</style></head><body>";
-    out << "<h1 class='header'>Silicore-C Report</h1>";
+    out << "<h1>Silicore-C Report</h1>";
     out << "<div class='card'><strong>Target:</strong> " << payload.value("target", "-") << "</div>";
 
     if (payload.contains("summary")) {
@@ -187,7 +216,7 @@ std::string render_html_report(const json& payload) {
     }
 
     if (payload.contains("results") && payload["results"].is_array()) {
-        out << "<div class='card'><h2 class='header'>Profiles</h2><ul>";
+        out << "<div class='card'><h2>Profiles</h2><ul>";
         for (const auto& entry : payload["results"]) {
             out << "<li>" << entry.value("platform", "-") << " : " << entry.value("status", "-")
                 << " (<a href='" << entry.value("url", "-") << "'>link</a>)</li>";
@@ -197,7 +226,7 @@ std::string render_html_report(const json& payload) {
 
     if (payload.contains("domain_result") && payload["domain_result"].is_object()) {
         auto dr = payload["domain_result"];
-        out << "<div class='card'><h2 class='header'>Domain Surface</h2>";
+        out << "<div class='card'><h2>Domain Surface</h2>";
         out << "<div><strong>Resolved:</strong> " << utils::join(dr.value("resolved_addresses", std::vector<std::string>{}), ", ") << "</div>";
         out << "<div><strong>Subdomains:</strong> " << dr.value("subdomains", json::array()).size() << "</div>";
         out << "<div><strong>RDAP Handle:</strong> " << dr["rdap"].value("handle", "-") << "</div>";

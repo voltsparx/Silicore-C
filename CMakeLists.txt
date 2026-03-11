@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.25)
+
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+  if(DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
+  elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/external/vcpkg/scripts/buildsystems/vcpkg.cmake")
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/external/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
+  endif()
+endif()
+
 project(silicore-c VERSION 1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -22,6 +31,8 @@ find_package(Threads REQUIRED)
 
 option(SILICORE_USE_LINENOISE "Use linenoise for prompt input" OFF)
 
+include(platforms/platform_sources.cmake)
+
 set(SILICORE_CORE_SOURCES
   core/orchestrator.cpp
   core/runner.cpp
@@ -34,12 +45,14 @@ set(SILICORE_CORE_SOURCES
   core/engines/thread_engine.cpp
   core/engines/parallel_engine.cpp
   core/collect/platform_schema.cpp
+  core/collect/platform_registry.cpp
   core/collect/platform_scanner.cpp
   core/collect/domain_collector.cpp
-  platforms/platforms.cpp
+  ${SILICORE_PLATFORM_SOURCES}
   core/interface/cli_parser.cpp
   core/interface/line_input.cpp
   core/interface/prompt.cpp
+  core/interface/banner.cpp
   core/reporting/reporting.cpp
   core/extensions/plugin_loader.cpp
 )
