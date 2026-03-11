@@ -59,6 +59,7 @@ set(SILICORE_CORE_SOURCES
   src/interface/prompt.cpp
   src/interface/banner.cpp
   src/interface/explain.cpp
+  src/interface/live_server.cpp
   src/reporting/reporting.cpp
   src/extensions/plugin_loader.cpp
   src/extensions/filter_loader.cpp

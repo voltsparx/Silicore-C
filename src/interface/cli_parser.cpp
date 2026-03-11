@@ -192,7 +192,7 @@ CliArgs parse_args(int argc, char* argv[]) {
         return args;
     }
     auto args = parse_tokens(tokens);
-    if (!args.html_output && !args.json_output && !args.text_output) {
+    if (!args.html_output && !args.json_output && !args.text_output && !args.csv_output) {
         args.text_output = true;
     }
     return args;

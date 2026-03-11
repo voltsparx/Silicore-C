@@ -56,7 +56,7 @@ json build_filter_json(const std::vector<extensions::FilterResult>& filters) {
 
 const char* status_color(const std::string& status) {
     using namespace silicore::interface;
-    if (status == "FOUND") return Colors::GREEN;
+    if (status == "FOUND") return Colors::SKY;
     if (status == "NOT_FOUND") return Colors::GREY;
     if (status == "BLOCKED") return Colors::SKY;
     if (status == "INVALID_USERNAME") return Colors::SKY;
@@ -186,7 +186,7 @@ std::string render_cli_report(const json& payload) {
     if (payload.contains("summary")) {
         const auto& summary = payload["summary"];
         out << c(std::string(symbol("minor")) + " Summary", Colors::SKY_DARK) << "\n";
-        out << c("Found: ", Colors::GREEN) << summary.value("found_count", 0)
+        out << c("Found: ", Colors::SKY) << summary.value("found_count", 0)
             << c(" | Not Found: ", Colors::GREY) << summary.value("not_found_count", 0)
             << c(" | Blocked: ", Colors::SKY) << summary.value("blocked_count", 0)
             << c(" | Error: ", Colors::RED) << summary.value("error_count", 0) << "\n";
@@ -461,6 +461,69 @@ std::string render_html_report(const json& payload) {
     }
 
     out << "</div></body></html>";
+    return out.str();
+}
+
+std::string render_csv_report(const json& payload) {
+    auto csv_escape = [](const std::string& input) {
+        if (input.find_first_of(",\"\n") == std::string::npos) {
+            return input;
+        }
+        std::string out = "\"";
+        for (char ch : input) {
+            if (ch == '"') {
+                out += "\"\"";
+            } else {
+                out.push_back(ch);
+            }
+        }
+        out += "\"";
+        return out;
+    };
+
+    std::ostringstream out;
+    out << "section,type,target,platform,status,url,confidence,http_status,response_time_ms,resolved_addresses,https_status,http_status_domain,rdap_registrar,subdomain_count\n";
+
+    std::string target = payload.value("target", "-");
+    if (payload.contains("results") && payload["results"].is_array()) {
+        for (const auto& entry : payload["results"]) {
+            out << "profile,profile,"
+                << csv_escape(target) << ","
+                << csv_escape(entry.value("platform", "")) << ","
+                << csv_escape(entry.value("status", "")) << ","
+                << csv_escape(entry.value("url", "")) << ","
+                << entry.value("confidence", 0) << ","
+                << entry.value("http_status", 0) << ","
+                << entry.value("response_time_ms", 0) << ",,,,,\n";
+        }
+    }
+
+    if (payload.contains("domain_result") && payload["domain_result"].is_object()) {
+        const auto& dr = payload["domain_result"];
+        std::string resolved = utils::join(dr.value("resolved_addresses", std::vector<std::string>{}), "|");
+        std::string registrar;
+        if (dr.contains("rdap") && dr["rdap"].is_object()) {
+            registrar = dr["rdap"].value("registrar", "");
+        }
+        int https_status = -1;
+        int http_status = -1;
+        if (dr.contains("https") && dr["https"].is_object()) {
+            https_status = dr["https"].value("status", -1);
+        }
+        if (dr.contains("http") && dr["http"].is_object()) {
+            http_status = dr["http"].value("status", -1);
+        }
+        out << "domain,domain,"
+            << csv_escape(target) << ",,,,," << ","
+            << "," << ","
+            << csv_escape(resolved) << ","
+            << https_status << ","
+            << http_status << ","
+            << csv_escape(registrar) << ","
+            << dr.value("subdomains", json::array()).size()
+            << "\n";
+    }
+
     return out.str();
 }
 
