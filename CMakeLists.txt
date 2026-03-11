@@ -34,35 +34,35 @@ option(SILICORE_USE_LINENOISE "Use linenoise for prompt input" OFF)
 include(platforms/platform_sources.cmake)
 
 set(SILICORE_CORE_SOURCES
-  core/orchestrator.cpp
-  core/runner.cpp
-  core/execution_policy.cpp
-  core/domain/entity.cpp
-  core/engines/async_engine.cpp
-  core/engines/cpu_engine.cpp
-  core/engines/engine_base.cpp
-  core/engines/fusion_engine.cpp
-  core/engines/health_monitor.cpp
-  core/engines/stabilizer_engine.cpp
-  core/engines/scheduler.cpp
-  core/engines/thread_engine.cpp
-  core/engines/parallel_engine.cpp
-  core/collect/platform_schema.cpp
-  core/collect/platform_registry.cpp
-  core/collect/platform_scanner.cpp
-  core/collect/domain_collector.cpp
+  src/orchestrator.cpp
+  src/runner.cpp
+  src/execution_policy.cpp
+  src/domain/entity.cpp
+  src/engines/async_engine.cpp
+  src/engines/cpu_engine.cpp
+  src/engines/engine_base.cpp
+  src/engines/fusion_engine.cpp
+  src/engines/health_monitor.cpp
+  src/engines/stabilizer_engine.cpp
+  src/engines/scheduler.cpp
+  src/engines/thread_engine.cpp
+  src/engines/parallel_engine.cpp
+  src/collect/platform_schema.cpp
+  src/collect/platform_registry.cpp
+  src/collect/platform_scanner.cpp
+  src/collect/domain_collector.cpp
   ${SILICORE_PLATFORM_SOURCES}
-  core/interface/cli_parser.cpp
-  core/interface/line_input.cpp
-  core/interface/prompt.cpp
-  core/interface/banner.cpp
-  core/reporting/reporting.cpp
-  core/extensions/plugin_loader.cpp
+  src/interface/cli_parser.cpp
+  src/interface/line_input.cpp
+  src/interface/prompt.cpp
+  src/interface/banner.cpp
+  src/reporting/reporting.cpp
+  src/extensions/plugin_loader.cpp
 )
 
 add_library(silicore_core STATIC ${SILICORE_CORE_SOURCES})
 
-target_include_directories(silicore_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(silicore_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(SILICORE_USE_LINENOISE)
   target_compile_definitions(silicore_core PUBLIC SILICORE_USE_LINENOISE)

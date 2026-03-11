@@ -1,1 +1,0 @@
-Docker scripts are intentionally omitted in Silicore-C. This directory mirrors Silica-X structure only.\n
