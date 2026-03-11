@@ -93,9 +93,14 @@ ensure_vcpkg() {
   "${VCPKG_ROOT}/bootstrap-vcpkg.sh"
 }
 
+ensure_ports() {
+  "${VCPKG_ROOT}/vcpkg" install curl openssl nlohmann-json
+}
+
 configure_build() {
   cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_TESTING=OFF \
     -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
 }
 
@@ -105,7 +110,7 @@ build_project() {
 
 main() {
   parse_args "$@"
-  local total=5
+  local total=6
   local step=1
 
   progress_bar "$step" "$total" "Checking dependencies"
@@ -119,6 +124,10 @@ main() {
   step=$((step+1))
   progress_bar "$step" "$total" "Preparing vcpkg"
   ensure_vcpkg
+
+  step=$((step+1))
+  progress_bar "$step" "$total" "Installing vcpkg ports"
+  ensure_ports
 
   step=$((step+1))
   progress_bar "$step" "$total" "Configuring build"

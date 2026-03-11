@@ -4,6 +4,7 @@ build-ninja/
 builg/
 .vscode/
 .idea/
+gtests/
 *.log
 *.tmp
 *.bak

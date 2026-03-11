@@ -1,1 +1,35 @@
-Placeholder for Silica-X parity (content pending C++ port).
+Silicore-C v1.0 (Crystal Lattice)
+
+Usage
+  silicore-c profile <username> [flags]
+  silicore-c surface <domain> [flags]
+  silicore-c fusion <username> <domain> [flags]
+  silicore-c help
+  silicore-c show plugins
+  silicore-c show filters
+  silicore-c show platforms
+
+Flags
+  --preset fast|balanced|deep|max
+  --timeout <ms>
+  --concurrency <n>
+  --proxy <url>
+  --tor
+  --txt --json --html
+  --out <dir>
+  --plugins a,b
+  --all-plugins
+  --filters a,b
+  --all-filters
+
+Prompt Mode
+Run silicore-c with no arguments to enter prompt mode. It will ask for:
+  1. workflow and target
+  2. output formats (comma-separated)
+  3. output directory
+Defaults are txt and the current working directory.
+
+Examples
+  silicore-c profile alice --preset deep --json --out output
+  silicore-c surface example.com --html --json
+  silicore-c fusion alice example.com --all-plugins --all-filters

@@ -1,1 +1,4 @@
-# Placeholder for Silica-X parity (content pending C++ port).
+[tool.silicore]
+name = "silicore-c"
+version = "1.0"
+theme = "Crystal Lattice"

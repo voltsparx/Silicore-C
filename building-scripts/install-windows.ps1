@@ -80,8 +80,12 @@ function Ensure-Vcpkg {
   & (Join-Path $VcpkgRoot 'bootstrap-vcpkg.bat')
 }
 
+function Ensure-VcpkgPorts {
+  & (Join-Path $VcpkgRoot 'vcpkg') install curl openssl nlohmann-json
+}
+
 function Configure-Build {
-  & cmake -S $RepoRoot -B $BuildDir -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$(Join-Path $VcpkgRoot 'scripts\buildsystems\vcpkg.cmake')"
+  & cmake -S $RepoRoot -B $BuildDir -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_TOOLCHAIN_FILE="$(Join-Path $VcpkgRoot 'scripts\buildsystems\vcpkg.cmake')"
 }
 
 function Build-Project {
@@ -89,7 +93,7 @@ function Build-Project {
 }
 
 try {
-  $total = 5
+  $total = 6
   $step = 1
 
   Write-ProgressLine -Step $step -Total $total -Label 'Checking dependencies'
@@ -100,6 +104,10 @@ try {
   $step++
   Write-ProgressLine -Step $step -Total $total -Label 'Preparing vcpkg'
   Ensure-Vcpkg
+
+  $step++
+  Write-ProgressLine -Step $step -Total $total -Label 'Installing vcpkg ports'
+  Ensure-VcpkgPorts
 
   $step++
   Write-ProgressLine -Step $step -Total $total -Label 'Configuring build'

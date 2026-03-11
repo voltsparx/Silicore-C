@@ -14,6 +14,9 @@
 # EXTERNAL cache entries
 ########################
 
+//No help, variable specified on the command line.
+CMAKE_BUILD_TYPE:UNINITIALIZED=Release
+
 //Value Computed by CMake.
 CMAKE_FIND_PACKAGE_REDIRECTS_DIR:STATIC=C:/Users/volts/OneDrive/Documents/GitHub/Silicore-C/build/CMakeFiles/pkgRedirects
 
