@@ -35,6 +35,11 @@ Common Flags
 Prompt Mode
 Run without arguments to enter the interactive prompt. It will ask for the workflow, output format (comma-separated), and output directory. Defaults are txt and the current working directory.
 
+Tor Routing
+- --tor routes traffic via socks5h://127.0.0.1:9050.
+- If Tor is running, Silicore-C uses it.
+- If Tor is not running, Silicore-C can auto-install, configure, and start Tor with confirmation.
+
 Outputs
 Reports are written to the output directory using Silica-X compatible keys.
 - txt: CLI summary

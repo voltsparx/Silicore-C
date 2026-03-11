@@ -29,6 +29,11 @@ Run silicore-c with no arguments to enter prompt mode. It will ask for:
   3. output directory
 Defaults are txt and the current working directory.
 
+Tor Routing
+  --tor enables Tor routing via socks5h://127.0.0.1:9050.
+  If Tor is already running, Silicore-C uses it.
+  If Tor is not running, Silicore-C asks to auto-install, configure, and start Tor.
+
 Examples
   silicore-c profile alice --preset deep --json --out output
   silicore-c surface example.com --html --json

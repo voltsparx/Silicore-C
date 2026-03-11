@@ -50,6 +50,7 @@ set(SILICORE_CORE_SOURCES
   src/collect/platform_schema.cpp
   src/collect/platform_registry.cpp
   src/collect/platform_scanner.cpp
+  src/collect/anonymity.cpp
   src/collect/domain_collector.cpp
   ${SILICORE_PLATFORM_SOURCES}
   src/interface/about.cpp
@@ -87,6 +88,9 @@ target_link_libraries(silicore_core
 
 if(UNIX AND NOT APPLE)
   target_link_libraries(silicore_core PUBLIC dl)
+endif()
+if(WIN32)
+  target_link_libraries(silicore_core PUBLIC ws2_32)
 endif()
 
 add_executable(silicore_c src/main.cpp)

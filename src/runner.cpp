@@ -1,6 +1,7 @@
 #include "runner.h"
 
 #include "collect/platform_schema.h"
+#include "collect/anonymity.h"
 #include "extensions/plugin_loader.h"
 #include "extensions/filter_loader.h"
 #include "interface/banner.h"
@@ -31,7 +32,18 @@ namespace {
 
 std::string resolve_proxy(const interface::CliArgs& args) {
     if (args.tor_enabled) {
-        return "socks5h://127.0.0.1:9050";
+        if (!collect::is_tor_running()) {
+            std::cout << interface::c(std::string(interface::symbol("warn")) + " Tor not running.", interface::Colors::RED) << "\n";
+            std::cout << interface::c("Start and configure Tor now? (y/N): ", interface::Colors::GREY);
+            std::string reply;
+            std::getline(std::cin, reply);
+            bool allow = !reply.empty() && (reply[0] == 'y' || reply[0] == 'Y');
+            if (!collect::ensure_tor_running(allow)) {
+                std::cout << interface::c(std::string(interface::symbol("warn")) + " Tor unavailable. Continuing without Tor proxy.", interface::Colors::RED) << "\n";
+                return "";
+            }
+        }
+        return collect::tor_proxy_url();
     }
     if (!args.proxy_url.empty()) {
         return args.proxy_url;
