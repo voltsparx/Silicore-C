@@ -1,4 +1,4 @@
-#include "core/collect/domain_collector.h"
+#include "collect/domain_collector.h"
 
 #include <gtest/gtest.h>
 
@@ -33,3 +33,4 @@ TEST(DomainUtils, ParseRdapInfo) {
     ASSERT_EQ(rdap.name_servers.size(), 1u);
     EXPECT_EQ(rdap.name_servers[0], "ns1.example.com");
 }
+

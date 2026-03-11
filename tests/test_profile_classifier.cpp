@@ -1,4 +1,4 @@
-#include "core/collect/platform_scanner.h"
+#include "collect/platform_scanner.h"
 
 #include <gtest/gtest.h>
 
@@ -32,3 +32,4 @@ TEST(ProfileClassifier, StatusDecisions) {
     resp.body = "welcome";
     EXPECT_EQ(classify_profile_status(cfg, resp, "alice"), "FOUND");
 }
+

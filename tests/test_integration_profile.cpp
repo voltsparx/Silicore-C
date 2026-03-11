@@ -1,4 +1,4 @@
-#include "core/collect/platform_scanner.h"
+#include "collect/platform_scanner.h"
 
 #include <gtest/gtest.h>
 
@@ -133,3 +133,4 @@ TEST(ProfileIntegration, ScansLocalServer) {
     ASSERT_EQ(result2.profiles.size(), 1u);
     EXPECT_EQ(result2.profiles[0].status, "NOT_FOUND");
 }
+

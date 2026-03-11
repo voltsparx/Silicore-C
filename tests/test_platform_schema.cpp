@@ -1,4 +1,4 @@
-#include "core/collect/platform_schema.h"
+#include "collect/platform_schema.h"
 
 #include <gtest/gtest.h>
 #include <algorithm>
@@ -14,3 +14,4 @@ TEST(PlatformSchema, EmbeddedPlatformsPresent) {
     });
     EXPECT_TRUE(it != platforms.end());
 }
+

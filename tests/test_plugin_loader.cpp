@@ -1,4 +1,4 @@
-#include "core/extensions/plugin_loader.h"
+#include "extensions/plugin_loader.h"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -33,3 +33,4 @@ TEST(PluginLoader, LoadAndRun) {
     }
     EXPECT_TRUE(found);
 }
+

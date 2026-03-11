@@ -1,4 +1,4 @@
-#include "core/collect/platform_schema.h"
+#include "collect/platform_schema.h"
 
 namespace silicore::collect {
 
@@ -30,3 +30,4 @@ PlatformConfig build_platform_unsplash() {
 }
 
 } // namespace silicore::collect
+
