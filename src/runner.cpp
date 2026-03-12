@@ -2,6 +2,9 @@
 
 #include "collect/platform_schema.h"
 #include "collect/anonymity.h"
+#include "analyze/correlator.h"
+#include "analyze/exposure.h"
+#include "analyze/narrative.h"
 #include "extensions/plugin_loader.h"
 #include "extensions/filter_loader.h"
 #include "interface/banner.h"
@@ -672,8 +675,7 @@ void write_reports(const interface::CliArgs& args, const reporting::json& payloa
         reporting::write_text_report(html, paths.html_path);
     }
     if (args.csv_output) {
-        auto csv = reporting::render_csv_report(payload);
-        reporting::write_text_report(csv, paths.csv_path);
+        reporting::write_csv_reports(payload, paths.cli_path);
     }
 }
 
@@ -687,10 +689,34 @@ reporting::json run_profile_flow(
     const std::string& proxy_url
 ) {
     auto profile = orchestrator.run_profile(username, policy, timeout, concurrency, proxy_url);
-    auto context_json = reporting::build_report_payload(username, profile.scan_result.profiles, nullptr, {}, nullptr, {}, "profile");
+    auto correlation = analyze::correlate(profile.scan_result.profiles);
+    auto issues = analyze::assess_profile_exposure(profile.scan_result.profiles);
+    auto issue_summary = analyze::summarize_issues(issues);
+    auto narrative = analyze::build_nano_brief(
+        username,
+        profile.scan_result.profiles,
+        "",
+        nullptr,
+        issues,
+        issue_summary,
+        correlation
+    );
+
+    reporting::ReportInputs context_input;
+    context_input.target = username;
+    context_input.profiles = profile.scan_result.profiles;
+    context_input.correlation = correlation;
+    context_input.issues = issues;
+    context_input.issue_summary = issue_summary;
+    context_input.narrative = narrative;
+    context_input.mode = "profile";
+
+    auto context_json = reporting::build_report_payload(context_input);
     auto plugins = run_plugins(args, "profile", context_json);
     auto filters = run_filters(args, "profile", context_json);
-    return reporting::build_report_payload(username, profile.scan_result.profiles, nullptr, plugins, nullptr, filters, "profile");
+    context_input.plugins = plugins;
+    context_input.filters = filters;
+    return reporting::build_report_payload(context_input);
 }
 
 reporting::json run_surface_flow(
@@ -702,10 +728,40 @@ reporting::json run_surface_flow(
     const std::string& proxy_url
 ) {
     auto surface = orchestrator.run_surface(domain, policy, timeout, proxy_url, args.include_ct, args.include_rdap, args.max_subdomains);
-    auto context_json = reporting::build_report_payload(domain, {}, &surface.scan_result, {}, nullptr, {}, "surface");
+    std::string target_domain = surface.scan_result.target_domain.empty() ? domain : surface.scan_result.target_domain;
+    auto issues = analyze::assess_domain_exposure(
+        target_domain,
+        surface.scan_result.https.headers,
+        surface.scan_result.http_redirects_to_https,
+        static_cast<int>(surface.scan_result.subdomains.size())
+    );
+    auto issue_summary = analyze::summarize_issues(issues);
+    analyze::CorrelationResult correlation;
+    auto narrative = analyze::build_nano_brief(
+        "",
+        {},
+        target_domain,
+        &surface.scan_result,
+        issues,
+        issue_summary,
+        correlation
+    );
+
+    reporting::ReportInputs context_input;
+    context_input.target = target_domain;
+    context_input.domain_result = &surface.scan_result;
+    context_input.correlation = correlation;
+    context_input.issues = issues;
+    context_input.issue_summary = issue_summary;
+    context_input.narrative = narrative;
+    context_input.mode = "surface";
+
+    auto context_json = reporting::build_report_payload(context_input);
     auto plugins = run_plugins(args, "surface", context_json);
     auto filters = run_filters(args, "surface", context_json);
-    return reporting::build_report_payload(domain, {}, &surface.scan_result, plugins, nullptr, filters, "surface");
+    context_input.plugins = plugins;
+    context_input.filters = filters;
+    return reporting::build_report_payload(context_input);
 }
 
 reporting::json run_fusion_flow(
@@ -730,18 +786,75 @@ reporting::json run_fusion_flow(
     auto profile = profile_future.get();
     auto surface = surface_future.get();
 
-    auto profile_payload = reporting::build_report_payload(username, profile.scan_result.profiles, nullptr, {}, nullptr, {}, "profile");
-    auto surface_payload = reporting::build_report_payload(domain, {}, &surface.scan_result, {}, nullptr, {}, "surface");
+    auto correlation = analyze::correlate(profile.scan_result.profiles);
+    auto profile_issues = analyze::assess_profile_exposure(profile.scan_result.profiles);
+    auto profile_issue_summary = analyze::summarize_issues(profile_issues);
+
+    std::string target_domain = surface.scan_result.target_domain.empty() ? domain : surface.scan_result.target_domain;
+    auto surface_issues = analyze::assess_domain_exposure(
+        target_domain,
+        surface.scan_result.https.headers,
+        surface.scan_result.http_redirects_to_https,
+        static_cast<int>(surface.scan_result.subdomains.size())
+    );
+    auto surface_issue_summary = analyze::summarize_issues(surface_issues);
+
+    std::vector<analyze::Issue> combined_issues = profile_issues;
+    combined_issues.insert(combined_issues.end(), surface_issues.begin(), surface_issues.end());
+    auto combined_issue_summary = analyze::summarize_issues(combined_issues);
+
+    auto narrative = analyze::build_nano_brief(
+        username,
+        profile.scan_result.profiles,
+        target_domain,
+        &surface.scan_result,
+        combined_issues,
+        combined_issue_summary,
+        correlation
+    );
+
+    reporting::ReportInputs profile_input;
+    profile_input.target = username;
+    profile_input.profiles = profile.scan_result.profiles;
+    profile_input.correlation = correlation;
+    profile_input.issues = profile_issues;
+    profile_input.issue_summary = profile_issue_summary;
+    profile_input.mode = "profile";
+    auto profile_payload = reporting::build_report_payload(profile_input);
+
+    reporting::ReportInputs surface_input;
+    surface_input.target = target_domain;
+    surface_input.domain_result = &surface.scan_result;
+    surface_input.issues = surface_issues;
+    surface_input.issue_summary = surface_issue_summary;
+    surface_input.mode = "surface";
+    auto surface_payload = reporting::build_report_payload(surface_input);
 
     engines::FusionEngine fusion_engine;
     auto fused = fusion_engine.fuse_profile_domain(profile_payload, surface_payload);
-    fused["graph"] = fusion_engine.generate_graph(fused);
+    auto fusion_graph = fusion_engine.generate_graph(fused);
+    fused["graph"] = fusion_graph;
 
-    std::string combined_target = username + "@" + domain;
-    auto context_json = reporting::build_report_payload(combined_target, profile.scan_result.profiles, &surface.scan_result, {}, &fused, {}, "fusion");
+    std::string combined_target = username + "@" + target_domain;
+
+    reporting::ReportInputs context_input;
+    context_input.target = combined_target;
+    context_input.profiles = profile.scan_result.profiles;
+    context_input.domain_result = &surface.scan_result;
+    context_input.correlation = correlation;
+    context_input.issues = combined_issues;
+    context_input.issue_summary = combined_issue_summary;
+    context_input.fused_intel = fused;
+    context_input.fusion_graph = fusion_graph;
+    context_input.narrative = narrative;
+    context_input.mode = "fusion";
+
+    auto context_json = reporting::build_report_payload(context_input);
     auto plugins = run_plugins(args, "fusion", context_json);
     auto filters = run_filters(args, "fusion", context_json);
-    return reporting::build_report_payload(combined_target, profile.scan_result.profiles, &surface.scan_result, plugins, &fused, filters, "fusion");
+    context_input.plugins = plugins;
+    context_input.filters = filters;
+    return reporting::build_report_payload(context_input);
 }
 int handle_command(const interface::CliArgs& args_in) {
     interface::CliArgs args = args_in;

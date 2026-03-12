@@ -44,13 +44,27 @@ inline json parse_context(const PluginContext* ctx) {
     }
 }
 
+inline std::string normalize_status(std::string value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char ch : value) {
+        if (ch == '_') {
+            out.push_back(' ');
+        } else {
+            out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+        }
+    }
+    return out;
+}
+
 inline int count_status(const json& payload, const std::string& status) {
     if (!payload.contains("results") || !payload["results"].is_array()) {
         return 0;
     }
     int count = 0;
+    const auto expected = normalize_status(status);
     for (const auto& entry : payload["results"]) {
-        if (entry.value("status", "") == status) {
+        if (normalize_status(entry.value("status", "")) == expected) {
             count++;
         }
     }
@@ -179,7 +193,7 @@ inline Metrics extract_metrics(const json& payload) {
     Metrics m;
     m.target = target_value(payload);
     m.found = count_status(payload, "FOUND");
-    m.not_found = count_status(payload, "NOT_FOUND");
+    m.not_found = count_status(payload, "NOT FOUND");
     m.blocked = count_status(payload, "BLOCKED");
     m.error = count_status(payload, "ERROR");
     m.total = total_results(payload);

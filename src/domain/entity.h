@@ -27,6 +27,11 @@ struct BaseEntity {
     std::vector<std::string> relationships;
 };
 
+struct ContactInfo {
+    std::vector<std::string> emails;
+    std::vector<std::string> phones;
+};
+
 struct ProfileEntity : BaseEntity {
     std::string platform;
     std::string profile_url;
@@ -34,6 +39,10 @@ struct ProfileEntity : BaseEntity {
     int http_status = 0;
     long response_time_ms = 0;
     std::string context;
+    std::string bio;
+    std::vector<std::string> links;
+    std::vector<std::string> mentions;
+    ContactInfo contacts;
 };
 
 struct DomainEntity : BaseEntity {

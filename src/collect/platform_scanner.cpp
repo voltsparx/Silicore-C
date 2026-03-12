@@ -1,5 +1,6 @@
 #include "collect/platform_scanner.h"
 
+#include "collect/extractor.h"
 #include "utils/strings.h"
 
 #include <regex>
@@ -78,7 +79,7 @@ std::string classify_profile_status(const PlatformConfig& cfg, const engines::Ht
     }
 
     if (is_not_found) {
-        return "NOT_FOUND";
+        return "NOT FOUND";
     }
 
     if (has_method(cfg.detection_methods, "status_code") && !cfg.exists_statuses.empty() && contains_int(cfg.exists_statuses, response.status_code)) {
@@ -135,6 +136,12 @@ ProfileScanResult PlatformScanner::scan(
         entity.context = resp.error;
         if (entity.context.empty() && entity.status == "ERROR") {
             entity.context = "http_error";
+        }
+        if (entity.status == "FOUND") {
+            entity.bio = extract_bio(resp.body);
+            entity.links = extract_links(resp.body);
+            entity.contacts = extract_contacts(resp.body);
+            entity.mentions = extract_username_mentions(resp.body, username);
         }
         result.profiles.push_back(std::move(entity));
     }

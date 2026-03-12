@@ -38,6 +38,10 @@ set(SILICORE_CORE_SOURCES
   src/runner.cpp
   src/execution_policy.cpp
   src/domain/entity.cpp
+  src/analyze/profile_summary.cpp
+  src/analyze/correlator.cpp
+  src/analyze/exposure.cpp
+  src/analyze/narrative.cpp
   src/engines/async_engine.cpp
   src/engines/cpu_engine.cpp
   src/engines/engine_base.cpp
@@ -50,6 +54,7 @@ set(SILICORE_CORE_SOURCES
   src/collect/platform_schema.cpp
   src/collect/platform_registry.cpp
   src/collect/platform_scanner.cpp
+  src/collect/extractor.cpp
   src/collect/anonymity.cpp
   src/collect/domain_collector.cpp
   ${SILICORE_PLATFORM_SOURCES}

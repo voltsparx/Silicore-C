@@ -131,6 +131,6 @@ TEST(ProfileIntegration, ScansLocalServer) {
 
     auto result2 = scanner.scan("missing", 1, 2000, "");
     ASSERT_EQ(result2.profiles.size(), 1u);
-    EXPECT_EQ(result2.profiles[0].status, "NOT_FOUND");
+    EXPECT_EQ(result2.profiles[0].status, "NOT FOUND");
 }
 

@@ -18,11 +18,11 @@ TEST(ProfileClassifier, StatusDecisions) {
 
     HttpResponse resp;
     resp.status_code = 404;
-    EXPECT_EQ(classify_profile_status(cfg, resp, "alice"), "NOT_FOUND");
+    EXPECT_EQ(classify_profile_status(cfg, resp, "alice"), "NOT FOUND");
 
     resp.status_code = 200;
     resp.body = "profile not found";
-    EXPECT_EQ(classify_profile_status(cfg, resp, "alice"), "NOT_FOUND");
+    EXPECT_EQ(classify_profile_status(cfg, resp, "alice"), "NOT FOUND");
 
     resp.status_code = 429;
     resp.body.clear();
