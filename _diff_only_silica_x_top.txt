@@ -1,8 +1,0 @@
-core\t118
-docker\t10
-docker-scripts\t5
-docs\t3
-requirements.txt\t1
-requirements-dev.txt\t1
-.dockerignore\t1
-silica-x.cpp\t1
