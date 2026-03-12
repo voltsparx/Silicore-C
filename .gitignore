@@ -8,6 +8,8 @@ gtests/
 *.log
 *.tmp
 *.bak
+*.txt
+*.json
 *.swp
 .DS_Store
 Thumbs.db

@@ -5,11 +5,11 @@ Usage
   silicore-c surface <domain...> [flags]
   silicore-c fusion <username> <domain> [flags]
   silicore-c orchestrate <profile|surface|fusion> <target> [flags]
-  silicore-c quicktest [--template id | --list-templates]
-  silicore-c wizard [--profile-phase|--surface-phase|--fusion-phase]
+  silicore-c quicktest [--template id | --list-templates] [--seed n] [--json]
+  silicore-c wizard [--profile-phase|--surface-phase|--fusion-phase] [--usernames u1,u2] [--domain example.com] [--sync-modules]
   silicore-c plugins | filters | modules | history | keywords
   silicore-c anonymity [--tor|--no-tor] [--proxy url] [--check|--prompt]
-  silicore-c live <target> [--no-browser]
+  silicore-c live <target> [--port n] [--no-browser]
   silicore-c prompt
   silicore-c help
   silicore-c show plugins
@@ -18,29 +18,35 @@ Usage
   silicore-c show modules
 
 Flags
-  --preset fast|balanced|deep|max
-  --profile-preset fast|balanced|deep|max
-  --surface-preset fast|balanced|deep|max
-  --timeout <ms>
-  --concurrency <n>
+  --preset fast|quick|balanced|deep|max
+  --profile-preset fast|quick|balanced|deep|max
+  --surface-preset quick|balanced|deep
+  --profile <preset>
+  --timeout <seconds>
+  --concurrency <n> --max-concurrency <n> --max-workers <n>
+  --max-platforms <n> --min-confidence <n>
+  --secondary-target <domain> --source-profile
   --proxy <url>
   --no-proxy
   --tor
   --no-tor
-  --txt --json --html --csv
+  --json --html --csv --no-csv
   --out <dir>
+  --plugin a,b
   --plugins a,b
   --all-plugins
+  --filter a,b
   --filters a,b
   --all-filters
   --extension-control auto|manual|hybrid
   --list-plugins --list-filters --list-modules
-  --scope <id> --search <text> --limit <n> --stats-only
+  --scope <id> --kind <id> --framework <id> --tag <id> --search <text> --limit <n> --stats-only
   --ct | --no-ct
   --rdap | --no-rdap
   --max-subdomains <n>
-  --live --no-browser --live-port <n>
+  --live --no-browser --port <n> --live-port <n>
   --list-templates --template <id> --seed <n>
+  --usernames <u1,u2> --domain <domain> --sync-modules
 
 Live Reports
   --live starts a local report server (default port 7331 unless --live-port is set).

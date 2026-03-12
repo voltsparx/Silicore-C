@@ -1,6 +1,7 @@
 #include "interface/prompt.h"
 
 #include "interface/colors.h"
+#include "interface/cli_config.h"
 #include "interface/line_input.h"
 #include "interface/symbols.h"
 #include "interface/banner.h"
@@ -17,6 +18,7 @@ struct PromptState {
     std::string profile_preset = "balanced";
     std::string surface_preset = "balanced";
     std::string extension_control = "auto";
+    std::string orchestrate_extension_control = "auto";
     std::vector<std::string> plugins;
     std::vector<std::string> filters;
     bool all_plugins = false;
@@ -31,6 +33,27 @@ struct PromptState {
 bool is_scan_command(const CliArgs& args) {
     auto cmd = utils::to_lower(args.command);
     return cmd == "profile" || cmd == "surface" || cmd == "fusion";
+}
+
+std::string join_selectors(const std::vector<std::string>& items) {
+    if (items.empty()) {
+        return "none";
+    }
+    std::ostringstream oss;
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (i > 0) {
+            oss << ",";
+        }
+        oss << items[i];
+    }
+    return oss.str();
+}
+
+std::string format_selector_set(const std::vector<std::string>& items, bool all) {
+    if (all) {
+        return "all";
+    }
+    return join_selectors(items);
 }
 
 std::vector<std::string> parse_selectors(const std::string& value) {
@@ -62,56 +85,17 @@ void apply_prompt_outputs(CliArgs& args, PromptState& state) {
     }
 
     if (!args.html_output && !args.json_output && !args.text_output && !args.csv_output) {
-        std::string prompt = c(std::string(symbol("action")) + " Output formats (txt, html, json, csv) [txt]: ", Colors::CYAN);
-        std::string input = read_line(prompt);
-        auto trimmed = utils::trim(input);
-        if (trimmed.empty()) {
+        args.text_output = state.text_output;
+        args.html_output = state.html_output;
+        args.json_output = state.json_output;
+        args.csv_output = state.csv_output;
+        if (!args.text_output && !args.html_output && !args.json_output && !args.csv_output) {
             args.text_output = true;
-            state.text_output = true;
-            state.html_output = false;
-            state.json_output = false;
-            state.csv_output = false;
-        } else {
-            args.text_output = false;
-            args.html_output = false;
-            args.json_output = false;
-            args.csv_output = false;
-            auto parts = utils::split(trimmed, ',');
-            for (auto& part : parts) {
-                auto key = utils::to_lower(utils::trim(part));
-                if (key == "txt" || key == "text" || key == "cli") {
-                    args.text_output = true;
-                } else if (key == "html") {
-                    args.html_output = true;
-                } else if (key == "json") {
-                    args.json_output = true;
-                } else if (key == "csv") {
-                    args.csv_output = true;
-                } else if (key == "all") {
-                    args.text_output = true;
-                    args.html_output = true;
-                    args.json_output = true;
-                    args.csv_output = true;
-                }
-            }
-            if (!args.text_output && !args.html_output && !args.json_output && !args.csv_output) {
-                args.text_output = true;
-            }
-            state.text_output = args.text_output;
-            state.html_output = args.html_output;
-            state.json_output = args.json_output;
-            state.csv_output = args.csv_output;
         }
     }
 
-    if (args.output_dir.empty()) {
-        std::string prompt = c(std::string(symbol("action")) + " Output directory [cwd]: ", Colors::CYAN);
-        std::string input = read_line(prompt);
-        auto trimmed = utils::trim(input);
-        if (!trimmed.empty()) {
-            args.output_dir = trimmed;
-            state.output_dir = trimmed;
-        }
+    if (args.output_dir.empty() && !state.output_dir.empty()) {
+        args.output_dir = state.output_dir;
     }
 }
 
@@ -126,7 +110,11 @@ void apply_state_to_args(PromptState& state, CliArgs& args) {
         args.surface_preset = state.surface_preset;
     }
     if (args.extension_control.empty()) {
-        args.extension_control = state.extension_control;
+        if (utils::to_lower(args.command) == "orchestrate" && !state.orchestrate_extension_control.empty()) {
+            args.extension_control = state.orchestrate_extension_control;
+        } else {
+            args.extension_control = state.extension_control;
+        }
     }
     if (!args.all_plugins && args.plugins.empty()) {
         args.plugins = state.plugins;
@@ -145,6 +133,14 @@ void apply_state_to_args(PromptState& state, CliArgs& args) {
     if (args.output_dir.empty() && !state.output_dir.empty()) {
         args.output_dir = state.output_dir;
     }
+}
+
+bool extensions_locked(const PromptState& state) {
+    return utils::to_lower(state.extension_control) == "auto";
+}
+
+bool has_manual_extensions(const PromptState& state) {
+    return state.all_plugins || state.all_filters || !state.plugins.empty() || !state.filters.empty();
 }
 
 bool handle_state_command(const std::string& trimmed, PromptState& state) {
@@ -174,6 +170,10 @@ bool handle_state_command(const std::string& trimmed, PromptState& state) {
         }
     }
     if (lower.rfind("set plugins ", 0) == 0) {
+        if (extensions_locked(state)) {
+            std::cout << c(std::string(symbol("warn")) + " Plugin selection is locked while extension_control=auto.", Colors::RED) << "\n";
+            return true;
+        }
         auto value = utils::trim(trimmed.substr(12));
         if (utils::to_lower(value) == "all") {
             state.all_plugins = true;
@@ -189,6 +189,10 @@ bool handle_state_command(const std::string& trimmed, PromptState& state) {
         return true;
     }
     if (lower.rfind("set filters ", 0) == 0) {
+        if (extensions_locked(state)) {
+            std::cout << c(std::string(symbol("warn")) + " Filter selection is locked while extension_control=auto.", Colors::RED) << "\n";
+            return true;
+        }
         auto value = utils::trim(trimmed.substr(12));
         if (utils::to_lower(value) == "all") {
             state.all_filters = true;
@@ -204,6 +208,10 @@ bool handle_state_command(const std::string& trimmed, PromptState& state) {
         return true;
     }
     if (lower.rfind("add plugins ", 0) == 0) {
+        if (extensions_locked(state)) {
+            std::cout << c(std::string(symbol("warn")) + " Plugin selection is locked while extension_control=auto.", Colors::RED) << "\n";
+            return true;
+        }
         auto value = utils::trim(trimmed.substr(12));
         auto selectors = parse_selectors(value);
         for (const auto& sel : selectors) {
@@ -214,6 +222,10 @@ bool handle_state_command(const std::string& trimmed, PromptState& state) {
         return true;
     }
     if (lower.rfind("remove plugins ", 0) == 0) {
+        if (extensions_locked(state)) {
+            std::cout << c(std::string(symbol("warn")) + " Plugin selection is locked while extension_control=auto.", Colors::RED) << "\n";
+            return true;
+        }
         auto value = utils::trim(trimmed.substr(15));
         auto selectors = parse_selectors(value);
         std::vector<std::string> keep;
@@ -235,6 +247,10 @@ bool handle_state_command(const std::string& trimmed, PromptState& state) {
         return true;
     }
     if (lower.rfind("add filters ", 0) == 0) {
+        if (extensions_locked(state)) {
+            std::cout << c(std::string(symbol("warn")) + " Filter selection is locked while extension_control=auto.", Colors::RED) << "\n";
+            return true;
+        }
         auto value = utils::trim(trimmed.substr(11));
         auto selectors = parse_selectors(value);
         for (const auto& sel : selectors) {
@@ -245,6 +261,10 @@ bool handle_state_command(const std::string& trimmed, PromptState& state) {
         return true;
     }
     if (lower.rfind("remove filters ", 0) == 0) {
+        if (extensions_locked(state)) {
+            std::cout << c(std::string(symbol("warn")) + " Filter selection is locked while extension_control=auto.", Colors::RED) << "\n";
+            return true;
+        }
         auto value = utils::trim(trimmed.substr(14));
         auto selectors = parse_selectors(value);
         std::vector<std::string> keep;
@@ -276,11 +296,25 @@ bool handle_state_command(const std::string& trimmed, PromptState& state) {
         return true;
     }
     if (lower.rfind("set extension_control ", 0) == 0) {
-        state.extension_control = utils::to_lower(utils::trim(trimmed.substr(22)));
+        auto next = utils::to_lower(utils::trim(trimmed.substr(22)));
+        if (next == "auto" && has_manual_extensions(state)) {
+            std::cout << c(std::string(symbol("warn")) + " Clear manual plugin/filter selections before switching to auto.", Colors::RED) << "\n";
+            return true;
+        }
+        state.extension_control = next;
         std::cout << c(std::string(symbol("feature")) + " Extension control: " + state.extension_control, Colors::CYAN) << "\n";
         return true;
     }
+    if (lower.rfind("set orchestrate_extension_control ", 0) == 0) {
+        state.orchestrate_extension_control = utils::to_lower(utils::trim(trimmed.substr(33)));
+        std::cout << c(std::string(symbol("feature")) + " Orchestrate extension control: " + state.orchestrate_extension_control, Colors::CYAN) << "\n";
+        return true;
+    }
     if (lower.rfind("select plugins ", 0) == 0) {
+        if (extensions_locked(state)) {
+            std::cout << c(std::string(symbol("warn")) + " Plugin selection is locked while extension_control=auto.", Colors::RED) << "\n";
+            return true;
+        }
         auto value = utils::trim(trimmed.substr(15));
         state.plugins = parse_selectors(value);
         state.all_plugins = false;
@@ -288,6 +322,10 @@ bool handle_state_command(const std::string& trimmed, PromptState& state) {
         return true;
     }
     if (lower.rfind("select filters ", 0) == 0) {
+        if (extensions_locked(state)) {
+            std::cout << c(std::string(symbol("warn")) + " Filter selection is locked while extension_control=auto.", Colors::RED) << "\n";
+            return true;
+        }
         auto value = utils::trim(trimmed.substr(15));
         state.filters = parse_selectors(value);
         state.all_filters = false;
@@ -302,7 +340,11 @@ bool handle_state_command(const std::string& trimmed, PromptState& state) {
 int run_prompt(const CommandHandler& handler) {
     PromptState state;
     while (true) {
-        std::string prompt = c(std::string(symbol("feature")) + " silicore-c", Colors::CYAN) + " > ";
+        std::string plugin_view = format_selector_set(state.plugins, state.all_plugins);
+        std::string filter_view = format_selector_set(state.filters, state.all_filters);
+        std::string prompt = "(console " + state.active_module + " ec=" + state.extension_control +
+                             " plugins=" + plugin_view + " filters=" + filter_view + ")>> ";
+        prompt = c(prompt, Colors::CYAN);
         std::string line = read_line(prompt);
         if (line.empty() && last_read_eof()) {
             break;
@@ -318,31 +360,39 @@ int run_prompt(const CommandHandler& handler) {
         }
         if (lower == "help") {
             std::cout << c(std::string(symbol("action")) + " Commands:", Colors::CYAN) << "\n";
-            std::cout << c("  profile <username>", Colors::GREY) << "\n";
-            std::cout << c("  surface <domain>", Colors::GREY) << "\n";
-            std::cout << c("  fusion <username> <domain>", Colors::GREY) << "\n";
-            std::cout << c("  orchestrate | quicktest | wizard", Colors::GREY) << "\n";
-            std::cout << c("  plugins | filters | modules | history | keywords", Colors::GREY) << "\n";
-            std::cout << c("  anonymity | live", Colors::GREY) << "\n";
-            std::cout << c("  about | explain", Colors::GREY) << "\n";
-            std::cout << c("  show plugins | show filters | show platforms", Colors::GREY) << "\n";
-            std::cout << c("  banner | help | exit", Colors::GREY) << "\n";
+            std::cout << c("  help | config | history [--limit N]", Colors::GREY) << "\n";
+            std::cout << c("  quicktest [--template <id>] [--seed N] [--list-templates] [--json]", Colors::GREY) << "\n";
+            std::cout << c("  anonymity [--check|--prompt|--tor|--no-tor|--proxy|--no-proxy]", Colors::GREY) << "\n";
+            std::cout << c("  plugins [--scope ...] | filters [--scope ...] | modules [flags] | keywords", Colors::GREY) << "\n";
+            std::cout << c("  about | explain | banner | clear | exit", Colors::GREY) << "\n";
+            std::cout << c("  scan <username> | profile <username...>", Colors::GREY) << "\n";
+            std::cout << c("  surface <domain> | fusion <username> <domain>", Colors::GREY) << "\n";
+            std::cout << c("  orchestrate <mode> <target>", Colors::GREY) << "\n";
             std::cout << c(std::string(symbol("feature")) + " Prompt controls:", Colors::CYAN) << "\n";
             std::cout << c("  use profile|surface|fusion", Colors::GREY) << "\n";
-            std::cout << c("  set plugins <all|none|list>", Colors::GREY) << "\n";
-            std::cout << c("  set filters <all|none|list>", Colors::GREY) << "\n";
-            std::cout << c("  add/remove plugins <list>", Colors::GREY) << "\n";
-            std::cout << c("  add/remove filters <list>", Colors::GREY) << "\n";
-            std::cout << c("  set profile_preset <fast|balanced|deep|max>", Colors::GREY) << "\n";
-            std::cout << c("  set surface_preset <fast|balanced|deep|max>", Colors::GREY) << "\n";
+            std::cout << c("  select module <profile|surface|fusion>", Colors::GREY) << "\n";
+            std::cout << c("  set plugins <none|all|selector1,selector2>", Colors::GREY) << "\n";
+            std::cout << c("  set filters <none|all|selector1,selector2>", Colors::GREY) << "\n";
+            std::cout << c("  select plugins <selector1,selector2>", Colors::GREY) << "\n";
+            std::cout << c("  select filters <selector1,selector2>", Colors::GREY) << "\n";
+            std::cout << c("  add/remove plugins <selector1,selector2>", Colors::GREY) << "\n";
+            std::cout << c("  add/remove filters <selector1,selector2>", Colors::GREY) << "\n";
+            std::cout << c("  set profile_preset <fast|quick|balanced|deep|max>", Colors::GREY) << "\n";
+            std::cout << c("  set surface_preset <quick|balanced|deep>", Colors::GREY) << "\n";
             std::cout << c("  set extension_control <auto|manual|hybrid>", Colors::GREY) << "\n";
-            std::cout << c(std::string(symbol("feature")) + " Outputs:", Colors::CYAN) << "\n";
-            std::cout << c("  Formats: txt, html, json, csv", Colors::GREY) << "\n";
-            std::cout << c("  Prompt will ask for formats and output directory (default: ./output)", Colors::GREY) << "\n";
+            std::cout << c("  set orchestrate_extension_control <auto|manual|hybrid>", Colors::GREY) << "\n";
             continue;
         }
         if (lower == "banner") {
             show_banner("No Anonymization");
+            continue;
+        }
+        if (lower == "config") {
+            std::cout << c(std::string(symbol("feature")) + " " + cli_config_summary(), Colors::GREY) << "\n";
+            continue;
+        }
+        if (lower == "clear") {
+            std::cout << "\x1B[2J\x1B[H";
             continue;
         }
         if (handle_state_command(trimmed, state)) {

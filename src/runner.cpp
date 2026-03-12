@@ -27,6 +27,7 @@
 #include <future>
 #include <iostream>
 #include <algorithm>
+#include <random>
 #include <sstream>
 
 namespace silicore {
@@ -133,6 +134,12 @@ struct OutputPaths {
     std::filesystem::path csv_path;
 };
 
+struct ScopeCoverage {
+    int profile = 0;
+    int surface = 0;
+    int fusion = 0;
+};
+
 OutputPaths resolve_output_paths(const interface::CliArgs& args, const std::string& target_key) {
     auto root = resolve_output_root(args) / "output";
     OutputPaths paths;
@@ -184,10 +191,11 @@ struct QuicktestTemplate {
 
 const std::vector<QuicktestTemplate>& quicktest_templates() {
     static const std::vector<QuicktestTemplate> templates = {
-        {"smoke", "Smoke Test", "Profile + surface sanity scan.", "silicore", "example.com", "smoke"},
-        {"profile", "Profile Quicktest", "Profile-only workflow.", "silicore", "", "profile"},
-        {"surface", "Surface Quicktest", "Surface-only workflow.", "", "example.com", "surface"},
-        {"fusion", "Fusion Quicktest", "Fusion workflow.", "silicore", "example.com", "fusion"},
+        {"atlas-mercier", "Atlas Mercier", "Synthetic profile + surface smoke template.", "atlas_mercier", "atlaslab.dev", "smoke"},
+        {"noor-akhtar", "Noor Akhtar", "Synthetic profile + surface smoke template.", "noor_akhtar", "nordelta-ops.net", "smoke"},
+        {"juno-harbor", "Juno Harbor", "Synthetic profile + surface smoke template.", "juno_harbor", "harbor-grid.io", "smoke"},
+        {"raven-ion", "Raven Ion", "Synthetic profile + surface smoke template.", "raven_ion", "ionrelay.cloud", "smoke"},
+        {"maya-cipher", "Maya Cipher", "Synthetic profile + surface smoke template.", "maya_cipher", "ciphertrail.ai", "smoke"},
     };
     return templates;
 }
@@ -263,43 +271,7 @@ bool extensions_enabled(const interface::CliArgs& args, const std::string& kind)
 
 void ensure_output_settings(interface::CliArgs& args) {
     if (!args.html_output && !args.json_output && !args.text_output && !args.csv_output) {
-        std::string prompt = interface::c(std::string(interface::symbol("action")) + " Output formats (txt, html, json, csv) [txt]: ", interface::Colors::CYAN);
-        std::string input = interface::read_line(prompt);
-        auto trimmed = utils::trim(input);
-        if (trimmed.empty()) {
-            args.text_output = true;
-        } else {
-            auto parts = utils::split(trimmed, ',');
-            for (auto& part : parts) {
-                auto key = utils::to_lower(utils::trim(part));
-                if (key == "txt" || key == "text" || key == "cli") {
-                    args.text_output = true;
-                } else if (key == "html") {
-                    args.html_output = true;
-                } else if (key == "json") {
-                    args.json_output = true;
-                } else if (key == "csv") {
-                    args.csv_output = true;
-                } else if (key == "all") {
-                    args.text_output = true;
-                    args.html_output = true;
-                    args.json_output = true;
-                    args.csv_output = true;
-                }
-            }
-            if (!args.text_output && !args.html_output && !args.json_output && !args.csv_output) {
-                args.text_output = true;
-            }
-        }
-    }
-
-    if (args.output_dir.empty()) {
-        std::string prompt = interface::c(std::string(interface::symbol("action")) + " Output directory [cwd]: ", interface::Colors::CYAN);
-        std::string input = interface::read_line(prompt);
-        auto trimmed = utils::trim(input);
-        if (!trimmed.empty()) {
-            args.output_dir = trimmed;
-        }
+        args.text_output = true;
     }
 }
 
@@ -396,29 +368,29 @@ void print_help() {
     using namespace interface;
     std::cout << c(std::string(symbol("major")) + " " + foundation::PROJECT_NAME + " v" + foundation::VERSION, Colors::SKY_DARK) << "\n";
     std::cout << c(std::string(symbol("action")) + " Commands:", Colors::CYAN) << "\n";
-    std::cout << c("  profile <username...> [--preset fast|balanced|deep|max] [--timeout ms] [--concurrency n] [--plugin a,b] [--filter a,b] [--tor]", Colors::GREY) << "\n";
-    std::cout << c("  surface <domain...> [--preset fast|balanced|deep|max] [--ct|--no-ct] [--rdap|--no-rdap] [--max-subdomains n] [--tor]", Colors::GREY) << "\n";
-    std::cout << c("  fusion <username> <domain> [--profile-preset fast|balanced|deep|max] [--surface-preset fast|balanced|deep|max] [--plugin a,b] [--filter a,b]", Colors::GREY) << "\n";
-    std::cout << c("  orchestrate <profile|surface|fusion> <target> [flags]", Colors::GREY) << "\n";
-    std::cout << c("  quicktest [--template id | --list-templates]", Colors::GREY) << "\n";
+    std::cout << c("  profile <username...> [--preset fast|quick|balanced|deep|max] [--timeout <seconds>] [--max-concurrency <n>] [--plugin ...] [--filter ...] [--html] [--csv]", Colors::GREY) << "\n";
+    std::cout << c("  surface <domain> [--preset quick|balanced|deep] [--ct|--no-ct] [--rdap|--no-rdap] [--max-subdomains <n>] [--plugin ...] [--filter ...] [--html]", Colors::GREY) << "\n";
+    std::cout << c("  fusion <username> <domain> [--profile-preset fast|quick|balanced|deep|max] [--surface-preset quick|balanced|deep] [--plugin ...] [--filter ...] [--html] [--csv]", Colors::GREY) << "\n";
+    std::cout << c("  orchestrate <profile|surface|fusion> <target> [--secondary-target <domain>] [--profile <preset>] [--max-workers <n>] [--min-confidence <n>]", Colors::GREY) << "\n";
+    std::cout << c("  quicktest [--template <id>] [--seed <n>] [--list-templates] [--json]", Colors::GREY) << "\n";
     std::cout << c("  plugins | filters | modules | history | keywords", Colors::GREY) << "\n";
-    std::cout << c("  anonymity [--tor|--no-tor] [--proxy url] [--check|--prompt]", Colors::GREY) << "\n";
-    std::cout << c("  wizard [--profile-phase|--surface-phase|--fusion-phase]", Colors::GREY) << "\n";
-    std::cout << c("  live <target> [--no-browser] [--live-port n]", Colors::GREY) << "\n";
+    std::cout << c("  anonymity [--tor|--no-tor] [--proxy|--no-proxy] [--check|--prompt]", Colors::GREY) << "\n";
+    std::cout << c("  wizard [--profile-phase|--surface-phase|--fusion-phase] [--usernames <u1,u2>] [--domain <domain>]", Colors::GREY) << "\n";
+    std::cout << c("  live <target> [--port <n>] [--no-browser]", Colors::GREY) << "\n";
     std::cout << c("  prompt", Colors::GREY) << "\n";
     std::cout << c("  about | --about", Colors::GREY) << "\n";
     std::cout << c("  explain | --explain", Colors::GREY) << "\n";
-    std::cout << c("  show plugins | filters | platforms | modules", Colors::GREY) << "\n";
     std::cout << c("  help", Colors::GREY) << "\n";
     std::cout << c(std::string(symbol("feature")) + " Flags:", Colors::CYAN) << "\n";
-    std::cout << c("  --preset fast|balanced|deep|max --profile-preset fast|balanced|deep|max --surface-preset fast|balanced|deep|max", Colors::GREY) << "\n";
-    std::cout << c("  --timeout <ms> --concurrency <n> --proxy <url> --tor --no-tor --no-proxy", Colors::GREY) << "\n";
-    std::cout << c("  --html --json --txt --csv --out <dir>", Colors::GREY) << "\n";
-    std::cout << c("  --plugins a,b --all-plugins --filters a,b --all-filters --extension-control auto|manual|hybrid", Colors::GREY) << "\n";
-    std::cout << c("  --list-plugins --list-filters --list-modules --scope <id> --search <text> --stats-only --limit <n>", Colors::GREY) << "\n";
-    std::cout << c("  --ct|--no-ct --rdap|--no-rdap --max-subdomains <n>", Colors::GREY) << "\n";
-    std::cout << c("  --live --no-browser --live-port <n>", Colors::GREY) << "\n";
-    std::cout << c("  --list-templates --template <id> --seed <n>", Colors::GREY) << "\n";
+    std::cout << c("  --preset fast|quick|balanced|deep|max --profile-preset fast|quick|balanced|deep|max --surface-preset quick|balanced|deep --profile <preset>", Colors::GREY) << "\n";
+    std::cout << c("  --timeout <seconds> --max-concurrency <n> --max-workers <n> --proxy <url> --tor --no-tor --no-proxy", Colors::GREY) << "\n";
+    std::cout << c("  --html --json --csv --no-csv --out <dir>", Colors::GREY) << "\n";
+    std::cout << c("  --plugin <selector> --all-plugins --list-plugins --filter <selector> --all-filters --list-filters", Colors::GREY) << "\n";
+    std::cout << c("  --extension-control auto|manual|hybrid --source-profile --secondary-target <domain>", Colors::GREY) << "\n";
+    std::cout << c("  --list-modules --scope <id> --kind <id> --framework <id> --tag <id> --search <text> --stats-only --limit <n>", Colors::GREY) << "\n";
+    std::cout << c("  --ct|--no-ct --rdap|--no-rdap --max-subdomains <n> --max-platforms <n> --min-confidence <n>", Colors::GREY) << "\n";
+    std::cout << c("  --live --no-browser --port <n> --live-port <n>", Colors::GREY) << "\n";
+    std::cout << c("  --list-templates --template <id> --seed <n> --usernames <u1,u2> --domain <domain> --sync-modules", Colors::GREY) << "\n";
     std::cout << c(std::string(symbol("feature")) + " Outputs:", Colors::CYAN) << "\n";
     std::cout << c("  output/data/<target>/results.json | output/html/<target>.html | output/cli/<target>.txt | output/cli/<target>.csv", Colors::GREY) << "\n";
     std::cout << c("  Default output root: ./output (override with --out <dir>)", Colors::GREY) << "\n";
@@ -444,6 +416,29 @@ bool scope_matches(const std::string& scopes, const std::string& scope) {
         }
     }
     return false;
+}
+
+void add_scope_coverage(const std::string& scopes, ScopeCoverage& coverage) {
+    if (scopes.empty()) {
+        return;
+    }
+    auto parts = utils::split(scopes, ',');
+    for (auto& part : parts) {
+        auto key = utils::to_lower(utils::trim(part));
+        if (key == "profile") {
+            coverage.profile += 1;
+        } else if (key == "surface") {
+            coverage.surface += 1;
+        } else if (key == "fusion") {
+            coverage.fusion += 1;
+        }
+    }
+}
+
+std::string format_scope_coverage(const ScopeCoverage& coverage) {
+    return "profile=" + std::to_string(coverage.profile) +
+           " surface=" + std::to_string(coverage.surface) +
+           " fusion=" + std::to_string(coverage.fusion);
 }
 
 bool tags_match(const std::vector<std::string>& tags, const std::string& scope) {
@@ -538,7 +533,13 @@ void show_modules_inventory(const interface::CliArgs& args) {
         if (!args.kind.empty() && utils::to_lower(entry.kind) != args.kind) {
             continue;
         }
+        if (!args.framework.empty() && utils::to_lower(entry.kind) != args.framework) {
+            continue;
+        }
         if (!tags_match(entry.tags, args.scope)) {
+            continue;
+        }
+        if (!args.tag.empty() && !tags_match(entry.tags, args.tag)) {
             continue;
         }
         if (!search_match(entry.id, args.search) && !search_match(entry.title, args.search)) {
@@ -1036,6 +1037,9 @@ int handle_command(const interface::CliArgs& args_in) {
         interface::CliArgs forwarded = args;
         forwarded.command = mode;
         forwarded.targets.assign(args.targets.begin() + 1, args.targets.end());
+        if (mode == "fusion" && forwarded.targets.size() < 2 && !args.secondary_target.empty()) {
+            forwarded.targets.push_back(args.secondary_target);
+        }
         if (mode == "profile" || mode == "surface" || mode == "fusion") {
             if (forwarded.targets.empty()) {
                 std::cerr << interface::c(std::string(interface::symbol("error")) + " Orchestrate requires a target.", interface::Colors::RED) << "\n";
@@ -1055,10 +1059,17 @@ int handle_command(const interface::CliArgs& args_in) {
         std::string template_id = args.template_id;
         if (template_id.empty()) {
             const auto& templates = quicktest_templates();
-            if (args.seed > 0 && !templates.empty()) {
+            if (templates.empty()) {
+                std::cerr << interface::c(std::string(interface::symbol("warn")) + " No quicktest templates available.", interface::Colors::RED) << "\n";
+                return 1;
+            }
+            if (args.seed > 0) {
                 template_id = templates[static_cast<size_t>(args.seed) % templates.size()].id;
             } else {
-                template_id = "smoke";
+                std::random_device rd;
+                std::mt19937 rng(rd());
+                std::uniform_int_distribution<size_t> dist(0, templates.size() - 1);
+                template_id = templates[dist(rng)].id;
             }
         }
 
@@ -1175,24 +1186,42 @@ int handle_command(const interface::CliArgs& args_in) {
         std::string fusion_domain;
 
         if (wizard_args.profile_phase) {
-            std::string input = interface::read_line(
-                interface::c(std::string(interface::symbol("action")) + " Usernames (comma/space separated): ", interface::Colors::CYAN)
-            );
-            profile_targets = parse_target_list(input);
+            if (!wizard_args.usernames.empty()) {
+                profile_targets = wizard_args.usernames;
+            } else {
+                std::string input = interface::read_line(
+                    interface::c(std::string(interface::symbol("action")) + " Usernames (comma/space separated): ", interface::Colors::CYAN)
+                );
+                profile_targets = parse_target_list(input);
+            }
         }
         if (wizard_args.surface_phase) {
-            std::string input = interface::read_line(
-                interface::c(std::string(interface::symbol("action")) + " Domains (comma/space separated): ", interface::Colors::CYAN)
-            );
-            surface_targets = parse_target_list(input);
+            if (!wizard_args.domain.empty()) {
+                surface_targets = {wizard_args.domain};
+            } else {
+                std::string input = interface::read_line(
+                    interface::c(std::string(interface::symbol("action")) + " Domains (comma/space separated): ", interface::Colors::CYAN)
+                );
+                surface_targets = parse_target_list(input);
+            }
         }
         if (wizard_args.fusion_phase) {
-            fusion_user = utils::trim(interface::read_line(
-                interface::c(std::string(interface::symbol("action")) + " Fusion username: ", interface::Colors::CYAN)
-            ));
-            fusion_domain = utils::trim(interface::read_line(
-                interface::c(std::string(interface::symbol("action")) + " Fusion domain: ", interface::Colors::CYAN)
-            ));
+            if (!wizard_args.usernames.empty()) {
+                fusion_user = wizard_args.usernames.front();
+            }
+            if (!wizard_args.domain.empty()) {
+                fusion_domain = wizard_args.domain;
+            }
+            if (fusion_user.empty()) {
+                fusion_user = utils::trim(interface::read_line(
+                    interface::c(std::string(interface::symbol("action")) + " Fusion username: ", interface::Colors::CYAN)
+                ));
+            }
+            if (fusion_domain.empty()) {
+                fusion_domain = utils::trim(interface::read_line(
+                    interface::c(std::string(interface::symbol("action")) + " Fusion domain: ", interface::Colors::CYAN)
+                ));
+            }
         }
 
         bool do_profile = !profile_targets.empty();
@@ -1357,10 +1386,22 @@ int run(int argc, char* argv[]) {
         plugin_manager.load_all(resolve_plugin_dir());
         extensions::FilterManager filter_manager;
         filter_manager.load_all(resolve_filter_dir());
+        ScopeCoverage plugin_coverage;
+        ScopeCoverage filter_coverage;
+        for (const auto& plugin : plugin_manager.plugins()) {
+            auto scopes = plugin->spec().scopes ? plugin->spec().scopes : "";
+            add_scope_coverage(scopes, plugin_coverage);
+        }
+        for (const auto& filter : filter_manager.filters()) {
+            auto scopes = filter->spec().scopes ? filter->spec().scopes : "";
+            add_scope_coverage(scopes, filter_coverage);
+        }
         std::cout << interface::c(std::string(interface::symbol("feature")) + " Platforms: " + std::to_string(platforms.size()), interface::Colors::GREY) << "\n";
         std::cout << interface::c(std::string(interface::symbol("feature")) + " Plugins: " + std::to_string(plugin_manager.plugins().size()), interface::Colors::GREY) << "\n";
         std::cout << interface::c(std::string(interface::symbol("feature")) + " Filters: " + std::to_string(filter_manager.filters().size()), interface::Colors::GREY) << "\n";
         std::cout << interface::c(std::string(interface::symbol("feature")) + " Modules: " + std::to_string(modules::all_modules().size()), interface::Colors::GREY) << "\n";
+        std::cout << interface::c(std::string(interface::symbol("feature")) + " Plugin scope coverage: " + format_scope_coverage(plugin_coverage), interface::Colors::GREY) << "\n";
+        std::cout << interface::c(std::string(interface::symbol("feature")) + " Filter scope coverage: " + format_scope_coverage(filter_coverage), interface::Colors::GREY) << "\n";
         std::cout << interface::c(std::string(interface::symbol("action")) + " Type 'help' for commands.", interface::Colors::GREY) << "\n\n";
         int code = interface::run_prompt([](const interface::CliArgs& inner) {
             return handle_command(inner);
