@@ -1,1 +1,0 @@
-Adapters layer placeholder (Silica-X parity scaffold).\n

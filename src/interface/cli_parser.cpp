@@ -18,7 +18,7 @@ std::vector<std::string> tokenize(const std::string& line) {
     return out;
 }
 
-CliArgs parse_tokens(const std::vector<std::string>& tokens) {
+CliArgs parse_tokens_internal(const std::vector<std::string>& tokens) {
     CliArgs args;
     if (tokens.empty()) {
         args.prompt_mode = true;
@@ -33,15 +33,13 @@ CliArgs parse_tokens(const std::vector<std::string>& tokens) {
         if (key == "full" || key == "combo") return std::string("fusion");
         if (key == "orch") return std::string("orchestrate");
         if (key == "qtest" || key == "smoke") return std::string("quicktest");
+        if (key == "targets" || key == "scans") return std::string("history");
         return key;
     };
 
     auto normalize_preset = [](const std::string& input) {
         std::string key = utils::to_lower(input);
-        if (key == "quick") key = "fast";
-        if (key == "safe") key = "fast";
         if (key == "standard") key = "balanced";
-        if (key == "aggressive") key = "max";
         return key;
     };
 
@@ -62,7 +60,10 @@ CliArgs parse_tokens(const std::vector<std::string>& tokens) {
 
     for (; i < tokens.size(); ++i) {
         const auto& token = tokens[i];
-        if (token == "--preset" && i + 1 < tokens.size()) {
+        if (token == "-h" || token == "--help") {
+            args.command = "help";
+            break;
+        } else if (token == "--preset" && i + 1 < tokens.size()) {
             args.preset = normalize_preset(tokens[++i]);
         } else if (token == "--profile" && i + 1 < tokens.size()) {
             args.profile_preset = normalize_preset(tokens[++i]);
@@ -84,8 +85,18 @@ CliArgs parse_tokens(const std::vector<std::string>& tokens) {
             }
         } else if ((token == "--concurrency" || token == "--max-concurrency" || token == "--max-workers") && i + 1 < tokens.size()) {
             args.concurrency = std::stoi(tokens[++i]);
-        } else if (token == "--proxy" && i + 1 < tokens.size()) {
-            args.proxy_url = tokens[++i];
+        } else if (token == "--proxy") {
+            if (i + 1 < tokens.size()) {
+                const auto& next = tokens[i + 1];
+                if (!next.empty() && next[0] != '-' && next.find("://") != std::string::npos) {
+                    args.proxy_url = next;
+                    ++i;
+                } else {
+                    args.proxy_enabled = true;
+                }
+            } else {
+                args.proxy_enabled = true;
+            }
         } else if (token == "--no-proxy") {
             args.no_proxy = true;
         } else if (token == "--tor") {
@@ -216,6 +227,7 @@ CliArgs parse_tokens(const std::vector<std::string>& tokens) {
         args.tor_enabled = false;
     }
     if (args.no_proxy) {
+        args.proxy_enabled = false;
         args.proxy_url.clear();
     }
     if (args.command == "prompt") {
@@ -245,7 +257,7 @@ CliArgs parse_args(int argc, char* argv[]) {
         args.prompt_mode = true;
         return args;
     }
-    auto args = parse_tokens(tokens);
+    auto args = parse_tokens_internal(tokens);
     if (!args.html_output && !args.json_output && !args.text_output && !args.csv_output) {
         args.text_output = true;
     }
@@ -253,7 +265,11 @@ CliArgs parse_args(int argc, char* argv[]) {
 }
 
 CliArgs parse_line(const std::string& line) {
-    return parse_tokens(tokenize(line));
+    return parse_tokens_internal(tokenize(line));
+}
+
+CliArgs parse_tokens(const std::vector<std::string>& tokens) {
+    return parse_tokens_internal(tokens);
 }
 
 } // namespace silicore::interface

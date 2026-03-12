@@ -1,1 +1,0 @@
-Capability registry placeholder (Silica-X parity scaffold).\n

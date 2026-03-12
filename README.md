@@ -19,21 +19,27 @@ Usage
 - silicore-c profile <username> [flags]
 - silicore-c surface <domain> [flags]
 - silicore-c fusion <username> <domain> [flags]
-- silicore-c show plugins | filters | platforms
+- silicore-c orchestrate <mode> <target> [flags]
+- silicore-c wizard [flags]
+- silicore-c quicktest [flags]
+- silicore-c plugins | filters | modules | history | keywords
+- silicore-c live <target> [--port]
+- silicore-c anonymity [flags]
+- silicore-c about | explain | prompt | help
 
 Common Flags
-- --preset fast|balanced|deep|max
-- --timeout <ms>
+- --preset safe|fast|quick|balanced|deep|aggressive|max
+- --timeout <seconds>
 - --concurrency <n>
 - --proxy <url>
 - --tor
 - --txt --json --html
 - --out <dir>
-- --plugins a,b --all-plugins
-- --filters a,b --all-filters
+- --plugin a,b --all-plugins
+- --filter a,b --all-filters
 
 Prompt Mode
-Run without arguments to enter the interactive prompt. It will ask for the workflow, output format (comma-separated), and output directory. Defaults are txt and the current working directory.
+Run without arguments (or `silicore-c prompt`) to enter the interactive prompt. It will ask for the workflow, output format (comma-separated), and output directory. Defaults are txt and the current working directory.
 
 Tor Routing
 - --tor routes traffic via socks5h://127.0.0.1:9050.
@@ -52,12 +58,16 @@ Project Info
 - Repository: https://github.com/voltsparx/Silica-X
 
 Layout
+- include/: public and internal headers
 - src/: core runtime, engines, interface, reporting
-- platforms/: compiled platform manifests
-- plugins/: dynamic analysis plugins
-- filters/: dynamic filter modules
+- src/platforms/: compiled platform manifests
+- src/plugins/: dynamic analysis plugins
+- src/filters/plugins/: dynamic filter modules
+- resources/: parity scaffolding and intel snapshots
 - building-scripts/: OS install scripts
-- docs/: architecture and release notes
+- cmake/: CMake helper lists
+- docs/: architecture, release notes, and source-layout.md
+- tests/: unit tests
 
 Security and Ethics
 Use Silicore-C only on targets you are authorized to test. Follow local laws and platform policies.

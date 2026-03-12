@@ -1,1 +1,0 @@
-Artifacts/output helpers placeholder (Silica-X parity scaffold).\n

@@ -1,1 +1,0 @@
-Security helpers placeholder (Silica-X parity scaffold).\n

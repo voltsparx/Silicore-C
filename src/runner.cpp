@@ -7,8 +7,11 @@
 #include "analyze/narrative.h"
 #include "extensions/plugin_loader.h"
 #include "extensions/filter_loader.h"
+#include "extensions/control_plane.h"
 #include "interface/banner.h"
 #include "interface/cli_parser.h"
+#include "interface/cli_config.h"
+#include "interface/help_menu.h"
 #include "interface/prompt.h"
 #include "interface/colors.h"
 #include "interface/symbols.h"
@@ -29,6 +32,7 @@
 #include <algorithm>
 #include <random>
 #include <sstream>
+#include <unordered_set>
 
 namespace silicore {
 
@@ -39,7 +43,47 @@ void show_explain();
 
 namespace {
 
-std::string resolve_proxy(const interface::CliArgs& args) {
+bool is_allowed_proxy_scheme(const std::string& scheme) {
+    auto lowered = utils::to_lower(scheme);
+    return lowered == "http" || lowered == "https" || lowered == "socks5" || lowered == "socks5h";
+}
+
+std::string resolve_env_proxy(std::string& error) {
+    const char* http = std::getenv("HTTP_PROXY");
+    const char* https = std::getenv("HTTPS_PROXY");
+    const char* raw = (http && *http) ? http : ((https && *https) ? https : nullptr);
+    if (!raw) {
+        error = "Proxy requested but neither HTTP_PROXY nor HTTPS_PROXY is set.";
+        return "";
+    }
+    std::string value = utils::trim(raw);
+    auto pos = value.find("://");
+    if (pos == std::string::npos) {
+        error = "Proxy URL missing scheme (expected http/https/socks5/socks5h).";
+        return "";
+    }
+    std::string scheme = value.substr(0, pos);
+    if (!is_allowed_proxy_scheme(scheme)) {
+        error = "Unsupported proxy scheme: " + scheme;
+        return "";
+    }
+    std::string host = value.substr(pos + 3);
+    auto at_pos = host.find('@');
+    if (at_pos != std::string::npos) {
+        host = host.substr(at_pos + 1);
+    }
+    auto slash_pos = host.find('/');
+    if (slash_pos != std::string::npos) {
+        host = host.substr(0, slash_pos);
+    }
+    if (utils::trim(host).empty()) {
+        error = "Proxy URL missing host.";
+        return "";
+    }
+    return value;
+}
+
+std::string resolve_proxy(const interface::CliArgs& args, std::string* error) {
     if (args.tor_enabled) {
         if (!collect::is_tor_running()) {
             std::cout << interface::c(std::string(interface::symbol("warn")) + " Tor not running.", interface::Colors::RED) << "\n";
@@ -48,16 +92,43 @@ std::string resolve_proxy(const interface::CliArgs& args) {
             );
             bool allow = !reply.empty() && (reply[0] == 'y' || reply[0] == 'Y');
             if (!collect::ensure_tor_running(allow)) {
-                std::cout << interface::c(std::string(interface::symbol("warn")) + " Tor unavailable. Continuing without Tor proxy.", interface::Colors::RED) << "\n";
+                std::string msg = "Tor unavailable. Start Tor or disable --tor.";
+                if (error) {
+                    *error = msg;
+                }
+                std::cout << interface::c(std::string(interface::symbol("warn")) + " " + msg, interface::Colors::RED) << "\n";
                 return "";
             }
         }
         return collect::tor_proxy_url();
     }
+    if (args.proxy_enabled) {
+        std::string err;
+        auto url = resolve_env_proxy(err);
+        if (!err.empty()) {
+            if (error) {
+                *error = err;
+            }
+            return "";
+        }
+        return url;
+    }
     if (!args.proxy_url.empty()) {
         return args.proxy_url;
     }
     return "";
+}
+
+bool resolve_proxy_or_fail(const interface::CliArgs& args, std::string& proxy_url) {
+    std::string error;
+    proxy_url = resolve_proxy(args, &error);
+    if ((args.tor_enabled || args.proxy_enabled) && proxy_url.empty()) {
+        if (!error.empty()) {
+            std::cerr << interface::c(std::string(interface::symbol("warn")) + " " + error, interface::Colors::RED) << "\n";
+        }
+        return false;
+    }
+    return true;
 }
 
 std::filesystem::path resolve_plugin_dir() {
@@ -365,35 +436,7 @@ void maybe_wait_for_live(const interface::CliArgs& args) {
 }
 
 void print_help() {
-    using namespace interface;
-    std::cout << c(std::string(symbol("major")) + " " + foundation::PROJECT_NAME + " v" + foundation::VERSION, Colors::SKY_DARK) << "\n";
-    std::cout << c(std::string(symbol("action")) + " Commands:", Colors::CYAN) << "\n";
-    std::cout << c("  profile <username...> [--preset fast|quick|balanced|deep|max] [--timeout <seconds>] [--max-concurrency <n>] [--plugin ...] [--filter ...] [--html] [--csv]", Colors::GREY) << "\n";
-    std::cout << c("  surface <domain> [--preset quick|balanced|deep] [--ct|--no-ct] [--rdap|--no-rdap] [--max-subdomains <n>] [--plugin ...] [--filter ...] [--html]", Colors::GREY) << "\n";
-    std::cout << c("  fusion <username> <domain> [--profile-preset fast|quick|balanced|deep|max] [--surface-preset quick|balanced|deep] [--plugin ...] [--filter ...] [--html] [--csv]", Colors::GREY) << "\n";
-    std::cout << c("  orchestrate <profile|surface|fusion> <target> [--secondary-target <domain>] [--profile <preset>] [--max-workers <n>] [--min-confidence <n>]", Colors::GREY) << "\n";
-    std::cout << c("  quicktest [--template <id>] [--seed <n>] [--list-templates] [--json]", Colors::GREY) << "\n";
-    std::cout << c("  plugins | filters | modules | history | keywords", Colors::GREY) << "\n";
-    std::cout << c("  anonymity [--tor|--no-tor] [--proxy|--no-proxy] [--check|--prompt]", Colors::GREY) << "\n";
-    std::cout << c("  wizard [--profile-phase|--surface-phase|--fusion-phase] [--usernames <u1,u2>] [--domain <domain>]", Colors::GREY) << "\n";
-    std::cout << c("  live <target> [--port <n>] [--no-browser]", Colors::GREY) << "\n";
-    std::cout << c("  prompt", Colors::GREY) << "\n";
-    std::cout << c("  about | --about", Colors::GREY) << "\n";
-    std::cout << c("  explain | --explain", Colors::GREY) << "\n";
-    std::cout << c("  help", Colors::GREY) << "\n";
-    std::cout << c(std::string(symbol("feature")) + " Flags:", Colors::CYAN) << "\n";
-    std::cout << c("  --preset fast|quick|balanced|deep|max --profile-preset fast|quick|balanced|deep|max --surface-preset quick|balanced|deep --profile <preset>", Colors::GREY) << "\n";
-    std::cout << c("  --timeout <seconds> --max-concurrency <n> --max-workers <n> --proxy <url> --tor --no-tor --no-proxy", Colors::GREY) << "\n";
-    std::cout << c("  --html --json --csv --no-csv --out <dir>", Colors::GREY) << "\n";
-    std::cout << c("  --plugin <selector> --all-plugins --list-plugins --filter <selector> --all-filters --list-filters", Colors::GREY) << "\n";
-    std::cout << c("  --extension-control auto|manual|hybrid --source-profile --secondary-target <domain>", Colors::GREY) << "\n";
-    std::cout << c("  --list-modules --scope <id> --kind <id> --framework <id> --tag <id> --search <text> --stats-only --limit <n>", Colors::GREY) << "\n";
-    std::cout << c("  --ct|--no-ct --rdap|--no-rdap --max-subdomains <n> --max-platforms <n> --min-confidence <n>", Colors::GREY) << "\n";
-    std::cout << c("  --live --no-browser --port <n> --live-port <n>", Colors::GREY) << "\n";
-    std::cout << c("  --list-templates --template <id> --seed <n> --usernames <u1,u2> --domain <domain> --sync-modules", Colors::GREY) << "\n";
-    std::cout << c(std::string(symbol("feature")) + " Outputs:", Colors::CYAN) << "\n";
-    std::cout << c("  output/data/<target>/results.json | output/html/<target>.html | output/cli/<target>.txt | output/cli/<target>.csv", Colors::GREY) << "\n";
-    std::cout << c("  Default output root: ./output (override with --out <dir>)", Colors::GREY) << "\n";
+    interface::show_flag_help();
 }
 
 std::vector<collect::PlatformConfig> load_platforms_safe() {
@@ -460,6 +503,214 @@ bool search_match(const std::string& value, const std::string& query) {
     auto hay = utils::to_lower(value);
     auto needle = utils::to_lower(query);
     return hay.find(needle) != std::string::npos;
+}
+
+struct ProfileRuntime {
+    int timeout_ms = 0;
+    int max_concurrency = 0;
+    std::string source_profile = "balanced";
+    int max_platforms = 0;
+    std::string preset_name = "balanced";
+};
+
+struct SurfaceRuntime {
+    int timeout_ms = 0;
+    int max_subdomains = 0;
+    std::string preset_name = "balanced";
+};
+
+ProfileRuntime resolve_profile_runtime(const std::string& preset_name, const interface::CliArgs& args) {
+    ProfileRuntime runtime;
+    auto presets = interface::profile_presets();
+    std::string key = interface::normalize_preset_name(preset_name.empty() ? "balanced" : preset_name);
+    auto it = presets.find(key);
+    if (it == presets.end()) {
+        it = presets.find("balanced");
+    }
+    runtime.preset_name = (it != presets.end()) ? it->first : "balanced";
+    if (it != presets.end()) {
+        runtime.timeout_ms = it->second.timeout_seconds * 1000;
+        runtime.max_concurrency = it->second.max_concurrency;
+        runtime.source_profile = it->second.source_profile;
+        runtime.max_platforms = it->second.max_platforms;
+    }
+    if (args.timeout_ms > 0) {
+        runtime.timeout_ms = args.timeout_ms;
+    }
+    if (args.concurrency > 0) {
+        runtime.max_concurrency = args.concurrency;
+    }
+    if (!args.source_profile.empty()) {
+        runtime.source_profile = args.source_profile;
+    }
+    if (args.max_platforms > 0) {
+        runtime.max_platforms = args.max_platforms;
+    }
+    return runtime;
+}
+
+SurfaceRuntime resolve_surface_runtime(const std::string& preset_name, const interface::CliArgs& args) {
+    SurfaceRuntime runtime;
+    auto presets = interface::surface_presets();
+    std::string key = interface::normalize_preset_name(preset_name.empty() ? "balanced" : preset_name);
+    auto it = presets.find(key);
+    if (it == presets.end()) {
+        it = presets.find("balanced");
+    }
+    runtime.preset_name = (it != presets.end()) ? it->first : "balanced";
+    if (it != presets.end()) {
+        runtime.timeout_ms = it->second.timeout_seconds * 1000;
+        runtime.max_subdomains = it->second.max_subdomains;
+    }
+    if (args.timeout_ms > 0) {
+        runtime.timeout_ms = args.timeout_ms;
+    }
+    if (args.max_subdomains > 0) {
+        runtime.max_subdomains = args.max_subdomains;
+    }
+    return runtime;
+}
+
+struct ExtensionPlanResult {
+    std::vector<std::string> plugins;
+    std::vector<std::string> filters;
+    bool ok = true;
+};
+
+ExtensionPlanResult resolve_extension_plan_or_fail(
+    const std::string& scope,
+    const std::string& scan_mode,
+    const interface::CliArgs& args,
+    const std::string& default_control
+) {
+    ExtensionPlanResult result;
+    std::string control = args.extension_control.empty() ? default_control : args.extension_control;
+    auto plan = extensions::resolve_extension_control(
+        scope,
+        scan_mode,
+        control,
+        args.plugins,
+        args.filters,
+        args.all_plugins,
+        args.all_filters
+    );
+
+    if (!plan.errors.empty()) {
+        std::cout << interface::c(std::string(interface::symbol("error")) + " Extension configuration errors:", interface::Colors::RED) << "\n";
+        for (const auto& item : plan.errors) {
+            std::cout << interface::c(" " + std::string(interface::symbol("error")) + " " + item, interface::Colors::RED) << "\n";
+        }
+        std::cout << interface::c(std::string(interface::symbol("warn")) + " Stop: extension plan invalid; scan was not started.", interface::Colors::RED) << "\n";
+        std::cout << interface::c(std::string(interface::symbol("tip")) + " Inspect selectors with: plugins --scope " + scope + " and filters --scope " + scope + ".", interface::Colors::YELLOW) << "\n";
+        std::cout << interface::c(std::string(interface::symbol("tip")) + " Use --extension-control manual|hybrid for explicit selector control.", interface::Colors::YELLOW) << "\n";
+        result.ok = false;
+        return result;
+    }
+
+    std::cout << interface::c(
+        std::string(interface::symbol("action")) + " Extension control (" + scope + "): mode=" + plan.scan_mode +
+        " control=" + plan.control_mode + " plugins=" + std::to_string(plan.plugins.size()) +
+        " filters=" + std::to_string(plan.filters.size()),
+        interface::Colors::CYAN
+    ) << "\n";
+    for (const auto& warning : plan.warnings) {
+        std::cout << interface::c(std::string(interface::symbol("warn")) + " " + warning, interface::Colors::YELLOW) << "\n";
+    }
+
+    result.plugins = plan.plugins;
+    result.filters = plan.filters;
+    return result;
+}
+
+bool apply_extension_plan(interface::CliArgs& args, const std::string& scope, const std::string& scan_mode, const std::string& default_control) {
+    auto plan = resolve_extension_plan_or_fail(scope, scan_mode, args, default_control);
+    if (!plan.ok) {
+        return false;
+    }
+    args.plugins = plan.plugins;
+    args.filters = plan.filters;
+    args.all_plugins = false;
+    args.all_filters = false;
+    return true;
+}
+
+bool wizard_preflight_extension_plan(
+    const std::vector<std::string>& scopes,
+    const std::string& profile_preset,
+    const std::string& surface_preset,
+    const std::string& extension_control,
+    const interface::CliArgs& args
+) {
+    std::vector<std::string> unique_scopes;
+    std::unordered_set<std::string> seen;
+    for (const auto& raw : scopes) {
+        std::string scope = utils::to_lower(utils::trim(raw));
+        if (scope.empty()) {
+            continue;
+        }
+        if (seen.insert(scope).second) {
+            unique_scopes.push_back(scope);
+        }
+    }
+    if (unique_scopes.empty()) {
+        return true;
+    }
+
+    bool has_errors = false;
+    for (const auto& scope : unique_scopes) {
+        if (scope != "profile" && scope != "surface" && scope != "fusion") {
+            continue;
+        }
+        std::string mode = profile_preset;
+        if (scope == "surface") {
+            mode = surface_preset;
+        } else if (scope == "fusion") {
+            mode = extensions::merge_scan_modes(profile_preset, surface_preset);
+        }
+
+        auto plan = extensions::resolve_extension_control(
+            scope,
+            mode,
+            extension_control,
+            args.plugins,
+            args.filters,
+            args.all_plugins,
+            args.all_filters
+        );
+
+        if (!plan.errors.empty()) {
+            has_errors = true;
+            std::cout << interface::c(
+                std::string(interface::symbol("error")) + " Wizard extension preflight failed (scope=" +
+                    scope + ", mode=" + plan.scan_mode + ", control=" + plan.control_mode + ")",
+                interface::Colors::RED
+            ) << "\n";
+            for (const auto& item : plan.errors) {
+                std::cout << interface::c(" " + std::string(interface::symbol("error")) + " " + item, interface::Colors::RED) << "\n";
+            }
+            continue;
+        }
+        if (!plan.warnings.empty()) {
+            std::cout << interface::c(
+                std::string(interface::symbol("warn")) + " Wizard extension preflight warnings (scope=" +
+                    scope + ", mode=" + plan.scan_mode + ", control=" + plan.control_mode + ")",
+                interface::Colors::YELLOW
+            ) << "\n";
+            for (const auto& item : plan.warnings) {
+                std::cout << interface::c(" " + std::string(interface::symbol("warn")) + " " + item, interface::Colors::YELLOW) << "\n";
+            }
+        }
+    }
+
+    if (has_errors) {
+        std::cout << interface::c(std::string(interface::symbol("warn")) + " Stop: wizard extension configuration is invalid.", interface::Colors::RED) << "\n";
+        std::cout << interface::c(
+            std::string(interface::symbol("tip")) + " Use plugins --scope <scope> and filters --scope <scope> to inspect compatible selectors.",
+            interface::Colors::YELLOW
+        ) << "\n";
+        return false;
+    }
+    return true;
 }
 
 void show_plugins_inventory(const interface::CliArgs& args) {
@@ -587,12 +838,43 @@ void show_history(const interface::CliArgs& args) {
 }
 
 void show_keywords() {
-    std::cout << "Keywords and aliases:\n";
-    std::cout << "  profile: scan, persona, social\n";
-    std::cout << "  surface: domain, asset\n";
-    std::cout << "  fusion: full, combo\n";
-    std::cout << "  quicktest: qtest, smoke\n";
-    std::cout << "  orchestrate: orch\n";
+    const auto& keywords = interface::prompt_keywords();
+    std::vector<std::string> order = {
+        "profile",
+        "surface",
+        "fusion",
+        "orchestrate",
+        "anonymity",
+        "live",
+        "keywords",
+        "plugins",
+        "filters",
+        "modules",
+        "quicktest",
+        "history",
+        "config",
+        "wizard",
+        "about",
+        "explain",
+        "banner",
+        "help",
+        "exit",
+    };
+
+    std::cout << interface::c("\n" + std::string(interface::symbol("major")) + " Prompt Keywords", interface::Colors::BLUE) << "\n";
+    std::cout << interface::c(std::string(36, '-'), interface::Colors::BLUE) << "\n";
+
+    for (const auto& key : order) {
+        auto it = keywords.find(key);
+        if (it == keywords.end()) {
+            continue;
+        }
+        std::vector<std::string> values(it->second.begin(), it->second.end());
+        std::sort(values.begin(), values.end());
+        std::cout << interface::c(std::string(interface::symbol("bullet")) + " " + key + ": " + utils::join(values, ", "), interface::Colors::CYAN) << "\n";
+        std::cout << "\n";
+    }
+    std::cout << "\n";
 }
 
 std::vector<extensions::PluginResult> run_plugins(
@@ -665,15 +947,12 @@ void write_reports(const interface::CliArgs& args, const reporting::json& payloa
     auto paths = resolve_output_paths(args, key);
     auto cli_report = reporting::render_cli_report(payload);
     std::cout << cli_report;
-    if (args.text_output) {
-        reporting::write_text_report(cli_report, paths.cli_path);
-    }
-    if (args.json_output) {
-        reporting::write_json_report(payload, paths.json_path);
-    }
+    reporting::write_text_report(cli_report, paths.cli_path);
+    reporting::write_json_report(payload, paths.json_path);
+    auto html = reporting::render_html_report(payload);
+    reporting::write_text_report(html, paths.html_path);
     if (args.html_output) {
-        auto html = reporting::render_html_report(payload);
-        reporting::write_text_report(html, paths.html_path);
+        std::cout << interface::c(std::string(interface::symbol("ok")) + " HTML report generated -> " + paths.html_path.string(), interface::Colors::GREEN) << "\n";
     }
     if (args.csv_output) {
         reporting::write_csv_reports(payload, paths.cli_path);
@@ -687,9 +966,10 @@ reporting::json run_profile_flow(
     const interface::CliArgs& args,
     int timeout,
     int concurrency,
-    const std::string& proxy_url
+    const std::string& proxy_url,
+    int max_platforms
 ) {
-    auto profile = orchestrator.run_profile(username, policy, timeout, concurrency, proxy_url);
+    auto profile = orchestrator.run_profile(username, policy, timeout, concurrency, proxy_url, max_platforms);
     auto correlation = analyze::correlate(profile.scan_result.profiles);
     auto issues = analyze::assess_profile_exposure(profile.scan_result.profiles);
     auto issue_summary = analyze::summarize_issues(issues);
@@ -775,10 +1055,11 @@ reporting::json run_fusion_flow(
     int timeout_profile,
     int timeout_surface,
     int concurrency,
-    const std::string& proxy_url
+    const std::string& proxy_url,
+    int max_platforms
 ) {
     auto profile_future = std::async(std::launch::async, [&]() {
-        return orchestrator.run_profile(username, profile_policy, timeout_profile, concurrency, proxy_url);
+        return orchestrator.run_profile(username, profile_policy, timeout_profile, concurrency, proxy_url, max_platforms);
     });
     auto surface_future = std::async(std::launch::async, [&]() {
         return orchestrator.run_surface(domain, surface_policy, timeout_surface, proxy_url, args.include_ct, args.include_rdap, args.max_subdomains);
@@ -924,41 +1205,46 @@ int handle_command(const interface::CliArgs& args_in) {
         bool tor_running = collect::is_tor_running();
         if (args.check_only) {
             std::cout << "Tor running: " << (tor_running ? "yes" : "no") << "\n";
-            if (!args.proxy_url.empty()) {
-                std::cout << "Proxy: " << args.proxy_url << "\n";
+            std::string proxy_error;
+            auto proxy_env = resolve_env_proxy(proxy_error);
+            if (!proxy_env.empty()) {
+                std::cout << "Proxy env: " << proxy_env << "\n";
+            } else {
+                std::cout << "Proxy env: not set\n";
             }
             return 0;
         }
         interface::CliArgs anon_args = args;
-        if (args.prompt_only || (!args.tor_enabled && args.proxy_url.empty() && !args.no_tor && !args.no_proxy)) {
+        bool has_flags = args.tor_enabled || args.proxy_enabled || args.no_tor || args.no_proxy;
+        if (args.prompt_only || !has_flags) {
             std::string reply = interface::read_line(
                 interface::c(std::string(interface::symbol("action")) + " Enable Tor routing? (y/N): ", interface::Colors::CYAN)
             );
             bool allow_tor = !reply.empty() && (reply[0] == 'y' || reply[0] == 'Y');
-            if (allow_tor) {
-                anon_args.tor_enabled = true;
-                anon_args.no_tor = false;
-            } else {
-                std::string proxy = interface::read_line(
-                    interface::c(std::string(interface::symbol("action")) + " Proxy URL (leave blank for none): ", interface::Colors::CYAN)
-                );
-                auto trimmed = utils::trim(proxy);
-                if (!trimmed.empty()) {
-                    anon_args.proxy_url = trimmed;
-                }
-            }
+            anon_args.tor_enabled = allow_tor;
+            anon_args.no_tor = !allow_tor;
+            std::string proxy_reply = interface::read_line(
+                interface::c(std::string(interface::symbol("action")) + " Enable proxy routing? (y/N): ", interface::Colors::CYAN)
+            );
+            bool allow_proxy = !proxy_reply.empty() && (proxy_reply[0] == 'y' || proxy_reply[0] == 'Y');
+            anon_args.proxy_enabled = allow_proxy;
+            anon_args.no_proxy = !allow_proxy;
         }
-        std::string proxy_url = resolve_proxy(anon_args);
-        if (anon_args.tor_enabled) {
+        std::string proxy_url;
+        if (!resolve_proxy_or_fail(anon_args, proxy_url)) {
+            return 1;
+        }
+        if (anon_args.tor_enabled && anon_args.proxy_enabled) {
+            std::cout << interface::c(std::string(interface::symbol("ok")) + " Tor + Proxy routing active.", interface::Colors::SKY) << "\n";
+        } else if (anon_args.tor_enabled) {
             std::cout << interface::c(std::string(interface::symbol("ok")) + " Tor routing active.", interface::Colors::SKY) << "\n";
-            if (!proxy_url.empty()) {
-                std::cout << interface::c("Proxy: " + proxy_url, interface::Colors::GREY) << "\n";
-            }
-        } else if (!proxy_url.empty()) {
-            std::cout << interface::c(std::string(interface::symbol("ok")) + " Proxy enabled.", interface::Colors::SKY) << "\n";
-            std::cout << interface::c("Proxy: " + proxy_url, interface::Colors::GREY) << "\n";
+        } else if (anon_args.proxy_enabled) {
+            std::cout << interface::c(std::string(interface::symbol("ok")) + " Proxy routing active.", interface::Colors::SKY) << "\n";
         } else {
             std::cout << interface::c(std::string(interface::symbol("warn")) + " No anonymization active.", interface::Colors::RED) << "\n";
+        }
+        if (anon_args.proxy_enabled && !proxy_url.empty()) {
+            std::cout << interface::c("Proxy: " + proxy_url, interface::Colors::GREY) << "\n";
         }
         return 0;
     }
@@ -1063,7 +1349,7 @@ int handle_command(const interface::CliArgs& args_in) {
                 std::cerr << interface::c(std::string(interface::symbol("warn")) + " No quicktest templates available.", interface::Colors::RED) << "\n";
                 return 1;
             }
-            if (args.seed > 0) {
+            if (args.seed_provided) {
                 template_id = templates[static_cast<size_t>(args.seed) % templates.size()].id;
             } else {
                 std::random_device rd;
@@ -1087,16 +1373,29 @@ int handle_command(const interface::CliArgs& args_in) {
         if (working.live && !working.html_output) {
             working.html_output = true;
         }
-        std::string proxy_url = resolve_proxy(working);
+        std::string proxy_url;
+        if (!resolve_proxy_or_fail(working, proxy_url)) {
+            return 1;
+        }
 
-        ExecutionPolicy profile_policy = load_policy(working.profile_preset.empty() ? working.preset : working.profile_preset);
-        ExecutionPolicy surface_policy = load_policy(working.surface_preset.empty() ? working.preset : working.surface_preset);
+        auto profile_runtime = resolve_profile_runtime(
+            working.profile_preset.empty() ? working.preset : working.profile_preset,
+            working
+        );
+        auto surface_runtime = resolve_surface_runtime(
+            working.surface_preset.empty() ? working.preset : working.surface_preset,
+            working
+        );
+        ExecutionPolicy profile_policy = load_policy(profile_runtime.preset_name);
+        ExecutionPolicy surface_policy = load_policy(surface_runtime.preset_name);
         if (working.concurrency > 0) {
             surface_policy.concurrency = working.concurrency;
         }
-        int timeout_profile = working.timeout_ms > 0 ? working.timeout_ms : profile_policy.timeout_ms;
-        int timeout_surface = working.timeout_ms > 0 ? working.timeout_ms : surface_policy.timeout_ms;
-        int concurrency = working.concurrency > 0 ? working.concurrency : profile_policy.concurrency;
+        int timeout_profile = profile_runtime.timeout_ms;
+        int timeout_surface = surface_runtime.timeout_ms;
+        int concurrency = profile_runtime.max_concurrency;
+        working.max_platforms = profile_runtime.max_platforms;
+        working.max_subdomains = surface_runtime.max_subdomains;
 
         std::vector<std::string> profile_targets;
         std::vector<std::string> surface_targets;
@@ -1144,29 +1443,53 @@ int handle_command(const interface::CliArgs& args_in) {
         Orchestrator orchestrator(std::move(platforms));
 
         if (do_profile && !profile_targets.empty()) {
+            interface::CliArgs profile_args = working;
+            if (!apply_extension_plan(profile_args, "profile", profile_runtime.preset_name, "manual")) {
+                return 1;
+            }
             for (const auto& username : profile_targets) {
-                auto payload = run_profile_flow(orchestrator, username, profile_policy, working, timeout_profile, concurrency, proxy_url);
+                auto payload = run_profile_flow(orchestrator, username, profile_policy, profile_args, timeout_profile, concurrency, proxy_url, profile_runtime.max_platforms);
                 std::string key = reporting::sanitize_target(username);
-                write_reports(working, payload, key);
-                maybe_open_live(working, username);
+                write_reports(profile_args, payload, key);
+                if (working.json_output) {
+                    std::cout << payload.dump(2) << "\n";
+                }
+                maybe_open_live(profile_args, username);
             }
         }
 
         if (do_surface && !surface_targets.empty()) {
+            interface::CliArgs surface_args = working;
+            surface_args.max_subdomains = surface_runtime.max_subdomains;
+            if (!apply_extension_plan(surface_args, "surface", surface_runtime.preset_name, "manual")) {
+                return 1;
+            }
             for (const auto& domain : surface_targets) {
-                auto payload = run_surface_flow(orchestrator, domain, surface_policy, working, timeout_surface, proxy_url);
+                auto payload = run_surface_flow(orchestrator, domain, surface_policy, surface_args, timeout_surface, proxy_url);
                 std::string key = reporting::sanitize_target(domain);
-                write_reports(working, payload, key);
-                maybe_open_live(working, domain);
+                write_reports(surface_args, payload, key);
+                if (working.json_output) {
+                    std::cout << payload.dump(2) << "\n";
+                }
+                maybe_open_live(surface_args, domain);
             }
         }
 
         if (do_fusion && !fusion_user.empty() && !fusion_domain.empty()) {
-            auto payload = run_fusion_flow(orchestrator, fusion_user, fusion_domain, profile_policy, surface_policy, working, timeout_profile, timeout_surface, concurrency, proxy_url);
+            interface::CliArgs fusion_args = working;
+            fusion_args.max_subdomains = surface_runtime.max_subdomains;
+            auto fusion_mode = extensions::merge_scan_modes(profile_runtime.preset_name, surface_runtime.preset_name);
+            if (!apply_extension_plan(fusion_args, "fusion", fusion_mode, "manual")) {
+                return 1;
+            }
+            auto payload = run_fusion_flow(orchestrator, fusion_user, fusion_domain, profile_policy, surface_policy, fusion_args, timeout_profile, timeout_surface, concurrency, proxy_url, profile_runtime.max_platforms);
             std::string combined = fusion_user + "@" + fusion_domain;
             std::string key = reporting::sanitize_target(combined);
-            write_reports(working, payload, key);
-            maybe_open_live(working, combined);
+            write_reports(fusion_args, payload, key);
+            if (working.json_output) {
+                std::cout << payload.dump(2) << "\n";
+            }
+            maybe_open_live(fusion_args, combined);
         }
 
         maybe_wait_for_live(working);
@@ -1241,42 +1564,86 @@ int handle_command(const interface::CliArgs& args_in) {
             }
         }
 
-        ExecutionPolicy profile_policy = load_policy(wizard_args.profile_preset.empty() ? wizard_args.preset : wizard_args.profile_preset);
-        ExecutionPolicy surface_policy = load_policy(wizard_args.surface_preset.empty() ? wizard_args.preset : wizard_args.surface_preset);
+        auto profile_runtime = resolve_profile_runtime(
+            wizard_args.profile_preset.empty() ? wizard_args.preset : wizard_args.profile_preset,
+            wizard_args
+        );
+        auto surface_runtime = resolve_surface_runtime(
+            wizard_args.surface_preset.empty() ? wizard_args.preset : wizard_args.surface_preset,
+            wizard_args
+        );
+        wizard_args.max_platforms = profile_runtime.max_platforms;
+        wizard_args.max_subdomains = surface_runtime.max_subdomains;
+
+        std::vector<std::string> selected_scopes;
+        if (do_profile) {
+            selected_scopes.push_back("profile");
+        }
+        if (do_surface) {
+            selected_scopes.push_back("surface");
+        }
+        if (do_fusion) {
+            selected_scopes.push_back("fusion");
+        }
+        std::string extension_control = wizard_args.extension_control.empty() ? "manual" : wizard_args.extension_control;
+        if (!wizard_preflight_extension_plan(selected_scopes, profile_runtime.preset_name, surface_runtime.preset_name, extension_control, wizard_args)) {
+            return 1;
+        }
+
+        ExecutionPolicy profile_policy = load_policy(profile_runtime.preset_name);
+        ExecutionPolicy surface_policy = load_policy(surface_runtime.preset_name);
         if (wizard_args.concurrency > 0) {
             surface_policy.concurrency = wizard_args.concurrency;
         }
-        int timeout_profile = wizard_args.timeout_ms > 0 ? wizard_args.timeout_ms : profile_policy.timeout_ms;
-        int timeout_surface = wizard_args.timeout_ms > 0 ? wizard_args.timeout_ms : surface_policy.timeout_ms;
-        int concurrency = wizard_args.concurrency > 0 ? wizard_args.concurrency : profile_policy.concurrency;
-        std::string proxy_url = resolve_proxy(wizard_args);
+        int timeout_profile = profile_runtime.timeout_ms;
+        int timeout_surface = surface_runtime.timeout_ms;
+        int concurrency = profile_runtime.max_concurrency;
+        std::string proxy_url;
+        if (!resolve_proxy_or_fail(wizard_args, proxy_url)) {
+            return 1;
+        }
 
         Orchestrator orchestrator(std::move(platforms));
 
         if (do_profile) {
+            interface::CliArgs profile_args = wizard_args;
+            if (!apply_extension_plan(profile_args, "profile", profile_runtime.preset_name, "manual")) {
+                return 1;
+            }
             for (const auto& username : profile_targets) {
-                auto payload = run_profile_flow(orchestrator, username, profile_policy, wizard_args, timeout_profile, concurrency, proxy_url);
+                auto payload = run_profile_flow(orchestrator, username, profile_policy, profile_args, timeout_profile, concurrency, proxy_url, profile_runtime.max_platforms);
                 std::string key = reporting::sanitize_target(username);
-                write_reports(wizard_args, payload, key);
-                maybe_open_live(wizard_args, username);
+                write_reports(profile_args, payload, key);
+                maybe_open_live(profile_args, username);
             }
         }
 
         if (do_surface) {
+            interface::CliArgs surface_args = wizard_args;
+            surface_args.max_subdomains = surface_runtime.max_subdomains;
+            if (!apply_extension_plan(surface_args, "surface", surface_runtime.preset_name, "manual")) {
+                return 1;
+            }
             for (const auto& domain : surface_targets) {
-                auto payload = run_surface_flow(orchestrator, domain, surface_policy, wizard_args, timeout_surface, proxy_url);
+                auto payload = run_surface_flow(orchestrator, domain, surface_policy, surface_args, timeout_surface, proxy_url);
                 std::string key = reporting::sanitize_target(domain);
-                write_reports(wizard_args, payload, key);
-                maybe_open_live(wizard_args, domain);
+                write_reports(surface_args, payload, key);
+                maybe_open_live(surface_args, domain);
             }
         }
 
         if (do_fusion) {
-            auto payload = run_fusion_flow(orchestrator, fusion_user, fusion_domain, profile_policy, surface_policy, wizard_args, timeout_profile, timeout_surface, concurrency, proxy_url);
+            interface::CliArgs fusion_args = wizard_args;
+            fusion_args.max_subdomains = surface_runtime.max_subdomains;
+            auto fusion_mode = extensions::merge_scan_modes(profile_runtime.preset_name, surface_runtime.preset_name);
+            if (!apply_extension_plan(fusion_args, "fusion", fusion_mode, "manual")) {
+                return 1;
+            }
+            auto payload = run_fusion_flow(orchestrator, fusion_user, fusion_domain, profile_policy, surface_policy, fusion_args, timeout_profile, timeout_surface, concurrency, proxy_url, profile_runtime.max_platforms);
             std::string combined = fusion_user + "@" + fusion_domain;
             std::string key = reporting::sanitize_target(combined);
-            write_reports(wizard_args, payload, key);
-            maybe_open_live(wizard_args, combined);
+            write_reports(fusion_args, payload, key);
+            maybe_open_live(fusion_args, combined);
         }
         maybe_wait_for_live(wizard_args);
         return 0;
@@ -1301,18 +1668,33 @@ int handle_command(const interface::CliArgs& args_in) {
     }
 
     if (command == "profile") {
+        if (effective.live && effective.targets.size() != 1) {
+            std::cerr << interface::c(std::string(interface::symbol("warn")) + " --live supports a single username at a time.", interface::Colors::RED) << "\n";
+            return 1;
+        }
         auto platforms = load_platforms_safe();
         if (platforms.empty()) {
             return 1;
         }
-        ExecutionPolicy policy = load_policy(effective.profile_preset.empty() ? effective.preset : effective.profile_preset);
-        int timeout = effective.timeout_ms > 0 ? effective.timeout_ms : policy.timeout_ms;
-        int concurrency = effective.concurrency > 0 ? effective.concurrency : policy.concurrency;
-        std::string proxy_url = resolve_proxy(effective);
+        auto profile_runtime = resolve_profile_runtime(
+            effective.profile_preset.empty() ? effective.preset : effective.profile_preset,
+            effective
+        );
+        ExecutionPolicy policy = load_policy(profile_runtime.preset_name);
+        int timeout = profile_runtime.timeout_ms;
+        int concurrency = profile_runtime.max_concurrency;
+        effective.max_platforms = profile_runtime.max_platforms;
+        if (!apply_extension_plan(effective, "profile", profile_runtime.preset_name, "manual")) {
+            return 1;
+        }
+        std::string proxy_url;
+        if (!resolve_proxy_or_fail(effective, proxy_url)) {
+            return 1;
+        }
         Orchestrator orchestrator(std::move(platforms));
 
         for (const auto& username : effective.targets) {
-            auto payload = run_profile_flow(orchestrator, username, policy, effective, timeout, concurrency, proxy_url);
+            auto payload = run_profile_flow(orchestrator, username, policy, effective, timeout, concurrency, proxy_url, profile_runtime.max_platforms);
             std::string key = reporting::sanitize_target(username);
             write_reports(effective, payload, key);
             maybe_open_live(effective, username);
@@ -1322,12 +1704,23 @@ int handle_command(const interface::CliArgs& args_in) {
     }
 
     if (command == "surface") {
-        ExecutionPolicy policy = load_policy(effective.surface_preset.empty() ? effective.preset : effective.surface_preset);
+        auto surface_runtime = resolve_surface_runtime(
+            effective.surface_preset.empty() ? effective.preset : effective.surface_preset,
+            effective
+        );
+        ExecutionPolicy policy = load_policy(surface_runtime.preset_name);
         if (effective.concurrency > 0) {
             policy.concurrency = effective.concurrency;
         }
-        int timeout = effective.timeout_ms > 0 ? effective.timeout_ms : policy.timeout_ms;
-        std::string proxy_url = resolve_proxy(effective);
+        int timeout = surface_runtime.timeout_ms;
+        effective.max_subdomains = surface_runtime.max_subdomains;
+        if (!apply_extension_plan(effective, "surface", surface_runtime.preset_name, "manual")) {
+            return 1;
+        }
+        std::string proxy_url;
+        if (!resolve_proxy_or_fail(effective, proxy_url)) {
+            return 1;
+        }
         Orchestrator orchestrator(std::vector<collect::PlatformConfig>{});
 
         for (const auto& domain : effective.targets) {
@@ -1349,20 +1742,37 @@ int handle_command(const interface::CliArgs& args_in) {
         if (platforms.empty()) {
             return 1;
         }
-        ExecutionPolicy profile_policy = load_policy(effective.profile_preset.empty() ? effective.preset : effective.profile_preset);
-        ExecutionPolicy surface_policy = load_policy(effective.surface_preset.empty() ? effective.preset : effective.surface_preset);
+        auto profile_runtime = resolve_profile_runtime(
+            effective.profile_preset.empty() ? effective.preset : effective.profile_preset,
+            effective
+        );
+        auto surface_runtime = resolve_surface_runtime(
+            effective.surface_preset.empty() ? effective.preset : effective.surface_preset,
+            effective
+        );
+        ExecutionPolicy profile_policy = load_policy(profile_runtime.preset_name);
+        ExecutionPolicy surface_policy = load_policy(surface_runtime.preset_name);
         if (effective.concurrency > 0) {
             surface_policy.concurrency = effective.concurrency;
         }
-        int timeout_profile = effective.timeout_ms > 0 ? effective.timeout_ms : profile_policy.timeout_ms;
-        int timeout_surface = effective.timeout_ms > 0 ? effective.timeout_ms : surface_policy.timeout_ms;
-        int concurrency = effective.concurrency > 0 ? effective.concurrency : profile_policy.concurrency;
-        std::string proxy_url = resolve_proxy(effective);
+        int timeout_profile = profile_runtime.timeout_ms;
+        int timeout_surface = surface_runtime.timeout_ms;
+        int concurrency = profile_runtime.max_concurrency;
+        effective.max_platforms = profile_runtime.max_platforms;
+        effective.max_subdomains = surface_runtime.max_subdomains;
+        auto fusion_mode = extensions::merge_scan_modes(profile_runtime.preset_name, surface_runtime.preset_name);
+        if (!apply_extension_plan(effective, "fusion", fusion_mode, "manual")) {
+            return 1;
+        }
+        std::string proxy_url;
+        if (!resolve_proxy_or_fail(effective, proxy_url)) {
+            return 1;
+        }
 
         const auto& username = effective.targets[0];
         const auto& domain = effective.targets[1];
         Orchestrator orchestrator(std::move(platforms));
-        auto payload = run_fusion_flow(orchestrator, username, domain, profile_policy, surface_policy, effective, timeout_profile, timeout_surface, concurrency, proxy_url);
+        auto payload = run_fusion_flow(orchestrator, username, domain, profile_policy, surface_policy, effective, timeout_profile, timeout_surface, concurrency, proxy_url, profile_runtime.max_platforms);
         std::string combined = username + "@" + domain;
         std::string key = reporting::sanitize_target(combined);
         write_reports(effective, payload, key);

@@ -1,1 +1,0 @@
-Intel helpers placeholder (Silica-X parity scaffold).\n
