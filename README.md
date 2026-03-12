@@ -10,10 +10,20 @@ Highlights
 - Plugin and filter ABI with dynamic loading
 - Prompt mode plus flag-driven CLI
 
+Build Dependencies
+- CMake 3.25+ and a C++20 compiler
+- libcurl, OpenSSL, and nlohmann-json (vcpkg manifest in `vcpkg.json`)
+- Set `VCPKG_ROOT` or place vcpkg under `external/vcpkg`
+
+Quick Start (Windows)
+- cmake --preset windows-msvc
+- cmake --build --preset windows-msvc
+- .\\build\\windows-msvc\\silicore-c.exe help
+
 Quick Start (Linux)
-- cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-- cmake --build build --config Release
-- ./build/silicore-c help
+- cmake --preset linux-release
+- cmake --build --preset linux-release
+- ./build/linux-release/silicore-c help
 
 Usage
 - silicore-c profile <username> [flags]

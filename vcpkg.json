@@ -1,0 +1,10 @@
+{
+  "name": "silicore-c",
+  "version-string": "1.0",
+  "dependencies": [
+    "curl",
+    "openssl",
+    "nlohmann-json",
+    "gtest"
+  ]
+}

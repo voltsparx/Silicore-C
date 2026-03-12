@@ -4,6 +4,7 @@
 #include "utils/strings.h"
 
 #include <curl/curl.h>
+#include <algorithm>
 #include <chrono>
 #include <deque>
 #include <memory>
@@ -57,6 +58,9 @@ void setup_easy(CURL* easy, const HttpRequest& req, CurlContext* ctx) {
     curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(easy, CURLOPT_MAXREDIRS, 5L);
     curl_easy_setopt(easy, CURLOPT_TIMEOUT_MS, req.timeout_ms);
+    curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(easy, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(easy, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_body);
     curl_easy_setopt(easy, CURLOPT_WRITEDATA, ctx);
     curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, write_header);
@@ -66,6 +70,16 @@ void setup_easy(CURL* easy, const HttpRequest& req, CurlContext* ctx) {
     ctx->user_agent = std::string(foundation::PROJECT_NAME) + "/" + foundation::VERSION +
         " (" + foundation::VERSION_THEME + ")";
     curl_easy_setopt(easy, CURLOPT_USERAGENT, ctx->user_agent.c_str());
+
+    long connect_timeout = 0;
+    if (req.connect_timeout_ms > 0) {
+        connect_timeout = req.connect_timeout_ms;
+    } else if (req.timeout_ms > 0) {
+        connect_timeout = std::min(8000, req.timeout_ms / 2);
+    }
+    if (connect_timeout > 0) {
+        curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, connect_timeout);
+    }
 
     if (!req.proxy_url.empty()) {
         curl_easy_setopt(easy, CURLOPT_PROXY, req.proxy_url.c_str());
@@ -119,6 +133,15 @@ std::vector<HttpResponse> run_async_batch(
     ensure_curl_global();
 
     CURLM* multi = curl_multi_init();
+    if (!multi) {
+        return results;
+    }
+#ifdef CURLMOPT_MAX_TOTAL_CONNECTIONS
+    curl_multi_setopt(multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, concurrency_limit);
+#endif
+#ifdef CURLMOPT_MAX_HOST_CONNECTIONS
+    curl_multi_setopt(multi, CURLMOPT_MAX_HOST_CONNECTIONS, std::max(2, std::min(8, concurrency_limit)));
+#endif
     std::deque<size_t> pending;
     for (size_t i = 0; i < requests.size(); ++i) {
         pending.push_back(i);

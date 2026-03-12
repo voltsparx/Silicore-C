@@ -3,9 +3,12 @@
 #include "collect/extractor.h"
 #include "utils/strings.h"
 
-#include <regex>
-#include <algorithm>
 #include <chrono>
+#include <algorithm>
+#include <memory>
+#include <mutex>
+#include <regex>
+#include <unordered_map>
 
 namespace silicore::collect {
 
@@ -22,8 +25,22 @@ bool matches_regex(const std::string& body, const std::string& pattern) {
         return true;
     }
     try {
-        std::regex re(pattern, std::regex::icase | std::regex::optimize);
-        return std::regex_search(body, re);
+        static std::mutex cache_lock;
+        static std::unordered_map<std::string, std::shared_ptr<const std::regex>> cache;
+        std::shared_ptr<const std::regex> compiled;
+        {
+            std::lock_guard<std::mutex> guard(cache_lock);
+            auto it = cache.find(pattern);
+            if (it == cache.end()) {
+                auto regex_ptr = std::make_shared<const std::regex>(
+                    pattern,
+                    std::regex::icase | std::regex::optimize
+                );
+                it = cache.emplace(pattern, std::move(regex_ptr)).first;
+            }
+            compiled = it->second;
+        }
+        return std::regex_search(body, *compiled);
     } catch (const std::regex_error&) {
         return false;
     }

@@ -11,6 +11,7 @@ struct HttpRequest {
     std::string url;
     std::string method;   // GET | HEAD
     int timeout_ms = 20000;
+    int connect_timeout_ms = 0; // 0 = auto (derived from timeout_ms)
     std::string proxy_url;
     size_t max_body_bytes = 0;
 };

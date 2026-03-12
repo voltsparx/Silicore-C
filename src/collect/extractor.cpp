@@ -3,6 +3,7 @@
 #include "utils/strings.h"
 
 #include <algorithm>
+#include <cstring>
 #include <regex>
 #include <set>
 
@@ -10,10 +11,14 @@ namespace silicore::collect {
 
 namespace {
 
-const std::regex kEmailRegex(R"(\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\b)");
-const std::regex kPhoneRegex(R"((?:\+?\d[\d\s().-]{6,}\d))");
+const std::regex kEmailRegex(R"(\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\b)",
+    std::regex::optimize);
+const std::regex kPhoneRegex(R"((?:\+?\d[\d\s().-]{6,}\d))",
+    std::regex::optimize);
 const std::regex kScriptStyleRegex(R"(<(script|style)\b[^>]*>.*?</\1>)", std::regex::icase | std::regex::optimize | std::regex::dotall);
 const std::regex kTagRegex(R"(<[^>]+>)", std::regex::optimize | std::regex::icase);
+const std::regex kParagraphRegex(R"(<p[^>]*>(.*?)</p>)", std::regex::icase | std::regex::dotall | std::regex::optimize);
+const std::regex kLinkRegex(R"(href\s*=\s*['"](https?://[^'\"#]+)['"])", std::regex::icase | std::regex::optimize);
 
 const std::vector<std::regex> kMetaDescriptionPatterns = {
     std::regex(R"(<meta[^>]*name=['"]description['"][^>]*content=['"](.*?)['"][^>]*>)", std::regex::icase | std::regex::dotall),
@@ -31,6 +36,22 @@ std::string unescape_html(std::string text) {
     utils::replace_all(text, "&quot;", "\"");
     utils::replace_all(text, "&#39;", "'");
     return text;
+}
+
+std::string escape_regex(const std::string& input) {
+    if (input.empty()) {
+        return "";
+    }
+    std::string out;
+    out.reserve(input.size() * 2);
+    constexpr const char* kMeta = R"(\.^$|()[]{}*+?)";
+    for (char ch : input) {
+        if (std::strchr(kMeta, ch)) {
+            out.push_back('\\');
+        }
+        out.push_back(ch);
+    }
+    return out;
 }
 
 std::string clean_text(const std::string& text) {
@@ -93,9 +114,8 @@ std::string extract_bio(const std::string& html) {
         }
     }
     try {
-        std::regex paragraph(R"(<p[^>]*>(.*?)</p>)", std::regex::icase | std::regex::dotall);
         std::smatch match;
-        if (std::regex_search(html, match, paragraph) && match.size() > 1) {
+        if (std::regex_search(html, match, kParagraphRegex) && match.size() > 1) {
             auto cleaned = clean_text(strip_tags(match[1].str()));
             return cleaned;
         }
@@ -111,9 +131,8 @@ std::vector<std::string> extract_links(const std::string& html) {
         return links;
     }
     try {
-        std::regex link_re(R"(href\s*=\s*['"](https?://[^'\"#]+)['"])", std::regex::icase);
         std::set<std::string> seen;
-        for (std::sregex_iterator it(html.begin(), html.end(), link_re), end; it != end; ++it) {
+        for (std::sregex_iterator it(html.begin(), html.end(), kLinkRegex), end; it != end; ++it) {
             if (it->size() < 2) {
                 continue;
             }
@@ -184,14 +203,15 @@ std::vector<std::string> extract_username_mentions(const std::string& html, cons
         return mentions;
     }
     std::set<std::string> seen;
+    auto safe_username = escape_regex(username);
     std::vector<std::string> patterns = {
-        "\\b" + username + "\\b",
-        "@" + username,
-        "/" + username,
+        "\\b" + safe_username + "\\b",
+        "@" + safe_username,
+        "/" + safe_username,
     };
     for (const auto& pattern : patterns) {
         try {
-            std::regex re(pattern, std::regex::icase);
+            std::regex re(pattern, std::regex::icase | std::regex::optimize);
             for (std::sregex_iterator it(text.begin(), text.end(), re), end; it != end; ++it) {
                 auto value = it->str();
                 if (seen.insert(value).second) {

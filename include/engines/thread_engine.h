@@ -5,6 +5,7 @@
 #include <future>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -24,6 +25,11 @@ public:
         std::future<Result> future = task->get_future();
         {
             std::lock_guard<std::mutex> lock(queue_mutex_);
+            if (stop_) {
+                std::promise<Result> promise;
+                promise.set_exception(std::make_exception_ptr(std::runtime_error("ThreadPool is stopped")));
+                return promise.get_future();
+            }
             tasks_.emplace([task]() { (*task)(); });
         }
         cv_.notify_one();

@@ -10,6 +10,7 @@ gtests/
 *.bak
 *.txt
 *.json
+!vcpkg.json
 *.swp
 .DS_Store
 Thumbs.db

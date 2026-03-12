@@ -7,10 +7,15 @@
 #include <algorithm>
 #include <chrono>
 #include <future>
-#include <netdb.h>
 #include <set>
-#include <sys/socket.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#endif
 
 namespace silicore::collect {
 
@@ -31,12 +36,21 @@ HttpArtifact to_artifact(const engines::HttpResponse& resp) {
 
 std::vector<std::string> resolve_addresses(const std::string& domain) {
     std::vector<std::string> results;
+#ifdef _WIN32
+    WSADATA wsa_data{};
+    const bool wsa_ready = (WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0);
+#endif
     addrinfo hints{};
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_family = AF_UNSPEC;
 
     addrinfo* res = nullptr;
     if (getaddrinfo(domain.c_str(), nullptr, &hints, &res) != 0) {
+#ifdef _WIN32
+        if (wsa_ready) {
+            WSACleanup();
+        }
+#endif
         return results;
     }
 
@@ -57,6 +71,11 @@ std::vector<std::string> resolve_addresses(const std::string& domain) {
         }
     }
     freeaddrinfo(res);
+#ifdef _WIN32
+    if (wsa_ready) {
+        WSACleanup();
+    }
+#endif
 
     results.assign(uniq.begin(), uniq.end());
     return results;
