@@ -12,10 +12,10 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ libcurl4-openssl-dev libssl-dev nlohmann-json3-dev libgtest-dev
+          sudo apt-get install -y cmake ninja-build g++ libcurl4-openssl-dev libssl-dev nlohmann-json3-dev
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake --preset linux-release-tests
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build --preset linux-release-tests
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --preset linux-release-tests
