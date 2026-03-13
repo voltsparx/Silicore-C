@@ -22,6 +22,13 @@
       "architecture": "x64"
     },
     {
+      "name": "windows-msvc-tests",
+      "inherits": "windows-msvc",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
       "name": "windows-ninja",
       "inherits": "base",
       "generator": "Ninja"
@@ -30,6 +37,13 @@
       "name": "linux-release",
       "inherits": "base",
       "generator": "Ninja"
+    },
+    {
+      "name": "linux-release-tests",
+      "inherits": "linux-release",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON"
+      }
     },
     {
       "name": "macos-release",
@@ -49,12 +63,21 @@
       "configuration": "Release"
     },
     {
+      "name": "windows-msvc-tests",
+      "configurePreset": "windows-msvc-tests",
+      "configuration": "Release"
+    },
+    {
       "name": "windows-ninja",
       "configurePreset": "windows-ninja"
     },
     {
       "name": "linux-release",
       "configurePreset": "linux-release"
+    },
+    {
+      "name": "linux-release-tests",
+      "configurePreset": "linux-release-tests"
     },
     {
       "name": "macos-release",
@@ -67,9 +90,16 @@
   ],
   "testPresets": [
     {
-      "name": "windows-msvc",
-      "configurePreset": "windows-msvc",
+      "name": "windows-msvc-tests",
+      "configurePreset": "windows-msvc-tests",
       "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-release-tests",
+      "configurePreset": "linux-release-tests",
       "output": {
         "outputOnFailure": true
       }
